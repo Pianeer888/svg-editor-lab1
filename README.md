@@ -17,6 +17,7 @@ npm run cli
 ```bash
 npm run check
 npm run build
+npm test
 ```
 
 作业要求见 [phase_cli_1.md](phase_cli_1.md)，架构与过程记录见 [doc/README.md](doc/README.md)。
