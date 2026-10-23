@@ -32,6 +32,16 @@ export abstract class Shape {
   abstract scale(factor: number): void;
   abstract geometry(): Readonly<Record<string, number | string>>;
 
+  summary(): string {
+    const geometry = Object.entries(this.geometry()).map(([key, value]) => `${key}=${value}`).join(' ');
+    const style = [
+      this.fillValue === undefined ? '' : `fill=${this.fillValue}`,
+      this.strokeValue === undefined ? '' : `stroke=${this.strokeValue}`,
+      this.strokeWidthValue === undefined ? '' : `stroke-width=${this.strokeWidthValue}`,
+    ].filter(Boolean).join(' ');
+    return [geometry, style].filter(Boolean).join(' ');
+  }
+
   protected static finite(value: string, attribute: string): number {
     if (value.trim() === '') throw new Error(`invalid ${attribute}: ${value}`);
     const parsed = Number(value);

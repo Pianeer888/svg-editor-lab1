@@ -8,6 +8,7 @@ export class Text extends Shape {
   move(dx: number, dy: number): void { Shape.validOffset(dx, dy); this.x += dx; this.y += dy; }
   scale(factor: number): void { Shape.positiveFactor(factor); this.x *= factor; this.y *= factor; }
   geometry(): Readonly<Record<string, number | string>> { return { x: this.x, y: this.y, text: this.content }; }
+  override summary(): string { return `(${this.x},${this.y}) "${this.content}"`; }
   protected setSpecific(attribute: string, value: string): void {
     switch (attribute) {
       case 'x': this.x = Shape.finite(value, attribute); return;
