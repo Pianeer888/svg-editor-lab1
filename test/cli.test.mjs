@@ -48,3 +48,42 @@ test('create accepts all built-in types and rejects the future box type', async 
   assert.match(output, /error: unknown shape type: box/);
   assert.equal((output.match(/├── |└── /g) ?? []).length, 6);
 });
+
+test('edit commands undo, redo, and clear redo after a new edit', async () => {
+  const output = await run([
+    'init', 'create rect r 1 2 3 4', 'move r 10 0', 'show r',
+    'undo', 'show r', 'redo', 'show r', 'undo', 'set r fill blue', 'redo', 'show r',
+  ]);
+  assert.match(output, /x=11 y=2 width=3 height=4/);
+  assert.equal((output.match(/x=1 y=2 width=3 height=4/g) ?? []).length, 2);
+  assert.match(output, /redid: rect#r moved by \(10,0\)/);
+  assert.match(output, /error: nothing to redo/);
+  assert.match(output, /fill=blue/);
+});
+
+test('delete undo restores the original position in its parent', async () => {
+  const output = await run([
+    'init', 'create g parent', 'create rect first 0 0 1 1 in parent',
+    'create circle middle 1 1 2 in parent', 'create rect last 2 2 1 1 in parent',
+    'delete middle', 'undo', 'tree parent',
+  ]);
+  assert.match(output, /├── rect#first[\s\S]*├── circle#middle[\s\S]*└── rect#last/);
+});
+
+test('failed edits do not change state or enter command history', async () => {
+  const output = await run(['init', 'create rect r 1 2 3 4', 'scale r 0', 'set r bogus value', 'undo', 'tree']);
+  assert.match(output, /error: scale factor must be positive/);
+  assert.match(output, /error: unknown attribute: bogus/);
+  assert.match(output, /undid: rect#r created/);
+  assert.doesNotMatch(output, /└── rect#r/);
+});
+
+test('group move undo restores descendants and init blocks old history', async () => {
+  const output = await run([
+    'init', 'create g group', 'create rect r 1 2 3 4 in group',
+    'move group 5 6', 'show r', 'undo', 'show r', 'init', 'undo',
+  ]);
+  assert.match(output, /x=6 y=8 width=3 height=4/);
+  assert.match(output, /x=1 y=2 width=3 height=4/);
+  assert.match(output, /error: undo not allowed after io command/);
+});

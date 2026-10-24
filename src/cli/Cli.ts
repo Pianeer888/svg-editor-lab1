@@ -5,9 +5,14 @@ import { SvgDocument } from '../model/SvgDocument.js';
 import { ShapeFactory } from '../model/ShapeFactory.js';
 import { Group } from '../model/Group.js';
 import type { Shape } from '../model/Shape.js';
+import { CommandHistory } from '../application/CommandHistory.js';
+import { CreateCommand } from '../application/CreateCommand.js';
+import { DeleteCommand } from '../application/DeleteCommand.js';
+import { ShapeEditCommand } from '../application/ShapeEditCommand.js';
 
 export class Cli {
   private document: SvgDocument | null = null;
+  private readonly history = new CommandHistory();
 
   constructor(private readonly input: Readable, private readonly output: Writable) {}
 
@@ -32,12 +37,24 @@ export class Cli {
     switch (command) {
       case 'help':
         this.expectCount(args, 0, 0, 'help');
-        this.output.write('init [w] [h]\ncreate <type> <id> [params…] [in <containerId>]\ntree [id]\nshow <id>\nOther commands will be added in later commits.\n');
+        this.output.write('init [w] [h]\ncreate <type> <id> [params…] [in <containerId>]\ndelete <id>\nmove <id> <dx> <dy>\nscale <id> <factor>\nset <id> <attr> <value>\nundo | redo\ntree [id]\nshow <id>\nOther commands will be added in later commits.\n');
         return;
       case 'init': this.init(args); return;
       case 'create': this.create(args); return;
       case 'tree': this.tree(args); return;
       case 'show': this.show(args); return;
+      case 'delete': this.delete(args); return;
+      case 'move': this.move(args); return;
+      case 'scale': this.scale(args); return;
+      case 'set': this.set(args); return;
+      case 'undo':
+        this.expectCount(args, 0, 0, 'undo');
+        this.requireDocument();
+        this.output.write(`undid: ${this.history.undo()}\n`); return;
+      case 'redo':
+        this.expectCount(args, 0, 0, 'redo');
+        this.requireDocument();
+        this.output.write(`redid: ${this.history.redo()}\n`); return;
       default: throw new Error(`unknown command: ${command}`);
     }
   }
@@ -48,6 +65,7 @@ export class Cli {
     const width = args.length === 0 ? 800 : this.number(args[0]!);
     const height = args.length === 0 ? 600 : this.number(args[1]!);
     this.document = new SvgDocument(width, height);
+    this.history.blockAfterIo();
     this.output.write(`canvas ${width}x${height} created\n`);
   }
 
@@ -58,8 +76,39 @@ export class Cli {
     let parentId: string | undefined;
     if (rest.length >= 2 && rest[rest.length - 2] === 'in') { parentId = rest.pop(); rest.pop(); }
     const shape = ShapeFactory.create(type!, id!, rest);
-    doc.add(shape, parentId);
+    this.history.execute(new CreateCommand(doc, shape, parentId));
     this.output.write(`${shape.type}#${shape.id} created${parentId === undefined ? '' : ` in g#${parentId}`}\n`);
+  }
+
+  private delete(args: string[]): void {
+    this.expectCount(args, 1, 1, 'delete <id>');
+    const command = new DeleteCommand(this.requireDocument(), args[0]!);
+    this.history.execute(command);
+    this.output.write(`${command.description}\n`);
+  }
+
+  private move(args: string[]): void {
+    this.expectCount(args, 3, 3, 'move <id> <dx> <dy>');
+    const shape = this.requireShape(this.requireDocument(), args[0]!);
+    const dx = this.number(args[1]!); const dy = this.number(args[2]!);
+    this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} moved by (${dx},${dy})`, shape, () => shape.move(dx, dy)));
+    this.output.write(`${shape.type}#${shape.id} moved by (${dx},${dy})\n`);
+  }
+
+  private scale(args: string[]): void {
+    this.expectCount(args, 2, 2, 'scale <id> <factor>');
+    const shape = this.requireShape(this.requireDocument(), args[0]!);
+    const factor = this.number(args[1]!);
+    this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} scaled by ${factor}`, shape, () => shape.scale(factor)));
+    this.output.write(`${shape.type}#${shape.id} scaled by ${factor}\n`);
+  }
+
+  private set(args: string[]): void {
+    this.expectCount(args, 3, 3, 'set <id> <attr> <value>');
+    const shape = this.requireShape(this.requireDocument(), args[0]!);
+    const attribute = args[1]!; const value = args[2]!;
+    this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}`, shape, () => shape.set(attribute, value)));
+    this.output.write(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}\n`);
   }
 
   private tree(args: string[]): void {

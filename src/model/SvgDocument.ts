@@ -18,6 +18,10 @@ export class SvgDocument {
   }
 
   add(shape: Shape, parentId?: string): void {
+    this.insert(shape, parentId);
+  }
+
+  insert(shape: Shape, parentId?: string, index?: number): void {
     const parent = parentId === undefined ? undefined : this.find(parentId);
     if (parentId !== undefined && parent === undefined) throw new Error(`no such container: ${parentId}`);
     if (parent !== undefined && !(parent instanceof Group)) throw new Error(`not a container: ${parentId}`);
@@ -31,8 +35,22 @@ export class SvgDocument {
     }
     if (parent !== undefined && incoming.includes(parent)) throw new Error('cannot add a container into its own descendant');
 
-    if (parent instanceof Group) parent.append(shape);
-    else this.rootShapes.push(shape);
+    if (parent instanceof Group) parent.insert(shape, index ?? parent.children.length);
+    else {
+      const position = index ?? this.rootShapes.length;
+      if (!Number.isInteger(position) || position < 0 || position > this.rootShapes.length) throw new Error('invalid child position');
+      this.rootShapes.splice(position, 0, shape);
+    }
+  }
+
+  remove(id: string): { shape: Shape; parentId?: string; index: number } {
+    const shape = this.find(id);
+    if (!shape) throw new Error(`no such shape: ${id}`);
+    const parent = shape.parent;
+    if (parent) return { shape, parentId: parent.id, index: parent.remove(shape) };
+    const index = this.rootShapes.indexOf(shape);
+    this.rootShapes.splice(index, 1);
+    return { shape, index };
   }
 
   *walk(): IterableIterator<Shape> {

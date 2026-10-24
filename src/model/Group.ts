@@ -8,12 +8,25 @@ export class Group extends Shape {
 
   /** The document validates identity and ancestry before calling this method. */
   append(child: Shape): void {
+    this.insert(child, this.childShapes.length);
+  }
+
+  insert(child: Shape, index: number): void {
     if (child.parent !== null) throw new Error(`shape already has a parent: ${child.id}`);
+    if (!Number.isInteger(index) || index < 0 || index > this.childShapes.length) throw new Error('invalid child position');
     if (child === this || (child instanceof Group && child.contains(this))) {
       throw new Error('cannot add a container into its own descendant');
     }
-    this.childShapes.push(child);
+    this.childShapes.splice(index, 0, child);
     child.setParent(this);
+  }
+
+  remove(child: Shape): number {
+    const index = this.childShapes.indexOf(child);
+    if (index < 0) throw new Error(`no such child: ${child.id}`);
+    this.childShapes.splice(index, 1);
+    child.setParent(null);
+    return index;
   }
 
   private contains(target: Shape): boolean {

@@ -1,10 +1,12 @@
 import type { Group } from './Group.js';
 
+export type ShapeState = { geometry: Readonly<Record<string, number | string>>; fill?: string; stroke?: string; strokeWidth?: number };
+
 export abstract class Shape {
   private parentShape: Group | null = null;
-  private fillValue?: string;
-  private strokeValue?: string;
-  private strokeWidthValue?: number;
+  private fillValue: string | undefined;
+  private strokeValue: string | undefined;
+  private strokeWidthValue: number | undefined;
 
   protected constructor(public readonly id: string, public readonly type: string) {
     if (!id.trim()) throw new Error('shape id must not be empty');
@@ -31,6 +33,19 @@ export abstract class Shape {
   abstract move(dx: number, dy: number): void;
   abstract scale(factor: number): void;
   abstract geometry(): Readonly<Record<string, number | string>>;
+
+  captureState(): ShapeState {
+    return { geometry: this.geometry(), ...(this.fillValue === undefined ? {} : { fill: this.fillValue }),
+      ...(this.strokeValue === undefined ? {} : { stroke: this.strokeValue }),
+      ...(this.strokeWidthValue === undefined ? {} : { strokeWidth: this.strokeWidthValue }) };
+  }
+
+  restoreState(state: ShapeState): void {
+    for (const [key, value] of Object.entries(state.geometry)) this.setSpecific(key, String(value));
+    this.fillValue = state.fill;
+    this.strokeValue = state.stroke;
+    this.strokeWidthValue = state.strokeWidth;
+  }
 
   summary(): string {
     const geometry = Object.entries(this.geometry()).map(([key, value]) => `${key}=${value}`).join(' ');
