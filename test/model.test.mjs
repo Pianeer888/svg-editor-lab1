@@ -95,6 +95,83 @@ test('ungroup promotes children in place, and undo restores the nested container
   assert.deepEqual(doc.find('outer').children.map(shape => shape.id), ['before', 'c', 'r', 'after']);
 });
 
+test('group restores the original tree when attaching a selected child fails midway', () => {
+  class FailingDocument extends SvgDocument {
+    failOnce = true;
+    add(shape, parentId) {
+      super.add(shape, parentId);
+      if (this.failOnce && parentId === 'picked' && shape.id === 'b') {
+        this.failOnce = false;
+        throw new Error('injected group failure');
+      }
+    }
+  }
+  const doc = new FailingDocument();
+  doc.add(new Group('left'));
+  doc.add(new Group('right'));
+  doc.add(new Rect('a', 0, 0, 1, 1), 'left');
+  doc.add(new Rect('b', 0, 0, 1, 1), 'right');
+  const before = [...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]);
+  const history = new CommandHistory();
+  assert.throws(() => history.execute(new GroupCommand(doc, 'picked', ['a', 'b'])), /injected group failure/);
+  assert.deepEqual([...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]), before);
+  assert.equal(doc.find('picked'), undefined);
+  assert.throws(() => history.undo(), /nothing to undo/);
+});
+
+test('ungroup restores the original tree when promoting a child fails midway', () => {
+  class FailingDocument extends SvgDocument {
+    failOnce = true;
+    insert(shape, parentId, index) {
+      super.insert(shape, parentId, index);
+      if (this.failOnce && shape.id === 'a' && parentId === 'outer') {
+        this.failOnce = false;
+        throw new Error('injected ungroup failure');
+      }
+    }
+  }
+  const doc = new FailingDocument();
+  doc.add(new Group('outer'));
+  doc.add(new Rect('before', 0, 0, 1, 1), 'outer');
+  doc.add(new Group('inner'), 'outer');
+  doc.add(new Rect('a', 0, 0, 1, 1), 'inner');
+  doc.add(new Rect('b', 0, 0, 1, 1), 'inner');
+  doc.add(new Rect('after', 0, 0, 1, 1), 'outer');
+  const before = [...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]);
+  const history = new CommandHistory();
+  assert.throws(() => history.execute(new UngroupCommand(doc, 'inner')), /injected ungroup failure/);
+  assert.deepEqual([...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]), before);
+  assert.throws(() => history.undo(), /nothing to undo/);
+});
+
+test('a failed group undo keeps both the tree and history available for retry', () => {
+  class FailingDocument extends SvgDocument {
+    failOnRestore = false;
+    insert(shape, parentId, index) {
+      super.insert(shape, parentId, index);
+      if (this.failOnRestore && shape.id === 'a' && parentId === 'left') {
+        this.failOnRestore = false;
+        throw new Error('injected undo failure');
+      }
+    }
+  }
+  const doc = new FailingDocument();
+  doc.add(new Group('left'));
+  doc.add(new Group('right'));
+  doc.add(new Rect('a', 0, 0, 1, 1), 'left');
+  doc.add(new Rect('b', 0, 0, 1, 1), 'right');
+  const history = new CommandHistory();
+  history.execute(new GroupCommand(doc, 'picked', ['a', 'b']));
+  const grouped = [...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]);
+  doc.failOnRestore = true;
+  assert.throws(() => history.undo(), /injected undo failure/);
+  assert.deepEqual([...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]), grouped);
+  history.undo();
+  assert.deepEqual([...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]), [
+    ['left', null], ['a', 'left'], ['right', null], ['b', 'right'],
+  ]);
+});
+
 test('addto and z-order undo exactly; invalid structure edits do not enter history', () => {
   const doc = new SvgDocument();
   doc.add(new Group('outer'));

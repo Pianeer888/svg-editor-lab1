@@ -18,6 +18,47 @@ export class SvgDocument {
   get height(): number { return this.heightValue; }
   get children(): readonly Shape[] { return this.rootShapes; }
 
+  /** Restore tree membership and order if a multi-step structure edit throws. */
+  changeStructureAtomically(action: () => void): void {
+    const roots = [...this.rootShapes];
+    const children = new Map<Group, Shape[]>();
+    const collect = (shapes: readonly Shape[]): void => {
+      for (const shape of shapes) {
+        if (shape instanceof Group) {
+          children.set(shape, [...shape.children]);
+          collect(shape.children);
+        }
+      }
+    };
+    collect(roots);
+    try { action(); }
+    catch (error) {
+      const groups = new Set(children.keys());
+      const collectCurrent = (shapes: readonly Shape[]): void => {
+        for (const shape of shapes) {
+          if (shape instanceof Group) {
+            groups.add(shape);
+            collectCurrent(shape.children);
+          }
+        }
+      };
+      collectCurrent(this.rootShapes);
+      for (const group of groups) {
+        for (const child of [...group.children]) group.remove(child);
+      }
+      this.rootShapes.length = 0;
+      const restore = (shapes: readonly Shape[], parent?: Group): void => {
+        for (const shape of shapes) {
+          if (parent) parent.append(shape);
+          else this.rootShapes.push(shape);
+          if (shape instanceof Group) restore(children.get(shape) ?? [], shape);
+        }
+      };
+      restore(roots);
+      throw error;
+    }
+  }
+
   resize(width: number, height: number): void {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
       throw new Error('canvas dimensions must be positive');

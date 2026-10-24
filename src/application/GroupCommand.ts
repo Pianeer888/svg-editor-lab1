@@ -29,16 +29,20 @@ export class GroupCommand implements EditCommand {
     }
     const ordered = [...this.document.walk()].filter(shape => selected.has(shape.id));
     const anchor = this.document.location(ordered[0]!.id);
-    for (const shape of ordered) this.document.remove(shape.id);
-    this.document.insert(this.group, anchor.parentId, anchor.index);
-    for (const shape of ordered) this.document.add(shape, this.group.id);
+    this.document.changeStructureAtomically(() => {
+      for (const shape of ordered) this.document.remove(shape.id);
+      this.document.insert(this.group, anchor.parentId, anchor.index);
+      for (const shape of ordered) this.document.add(shape, this.group.id);
+    });
   }
 
   undo(): void {
-    for (const child of [...this.group.children]) this.document.remove(child.id);
-    this.document.remove(this.group.id);
-    for (const { shape, parentId, index } of [...this.locations].sort((a, b) => a.index - b.index)) {
-      this.document.insert(shape, parentId, index);
-    }
+    this.document.changeStructureAtomically(() => {
+      for (const child of [...this.group.children]) this.document.remove(child.id);
+      this.document.remove(this.group.id);
+      for (const { shape, parentId, index } of [...this.locations].sort((a, b) => a.index - b.index)) {
+        this.document.insert(shape, parentId, index);
+      }
+    });
   }
 }

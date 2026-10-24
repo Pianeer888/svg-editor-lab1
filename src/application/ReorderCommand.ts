@@ -11,14 +11,20 @@ export class ReorderCommand implements EditCommand {
   }
 
   execute(): void {
-    this.original = this.document.location(this.id);
-    this.document.remove(this.id);
-    this.document.insert(this.original.shape, this.original.parentId, this.direction === 'back' ? 0 : undefined);
+    const original = this.document.location(this.id);
+    this.original = original;
+    this.document.changeStructureAtomically(() => {
+      this.document.remove(this.id);
+      this.document.insert(original.shape, original.parentId, this.direction === 'back' ? 0 : undefined);
+    });
   }
 
   undo(): void {
     if (!this.original) throw new Error('command was not executed');
-    this.document.remove(this.id);
-    this.document.insert(this.original.shape, this.original.parentId, this.original.index);
+    const original = this.original;
+    this.document.changeStructureAtomically(() => {
+      this.document.remove(this.id);
+      this.document.insert(original.shape, original.parentId, original.index);
+    });
   }
 }

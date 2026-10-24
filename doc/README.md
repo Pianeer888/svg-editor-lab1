@@ -14,29 +14,45 @@
 | `src/infrastructure/` | SVG/XML 与模型的双向转换、文件读写；实现应用层定义的存取接口。 |
 | `src/main.ts` | 创建并连接上述对象，启动 CLI。 |
 
-组件图的 PlantUML 源码如下。图中的箭头表示编译时依赖；运行时应用层通过接口调用基础设施实现。
+下面是初版**设计目标**的组件图：框内标出每层的关键职责和接口，箭头表示预期依赖方向。它用于对照实现过程，不代表最终代码已经完全遵守；实际依赖图见“一致性自查”。题目要求组件图或包图，因此这里按职责成组表达，不逐个罗列全部具体图形类和命令类。
 
 ```plantuml
 @startuml
-component "CLI" as CLI
-component "应用层" as APP
-component "模型层" as MODEL
-component "SVG 文件读写" as INFRA
-component "程序入口" as MAIN
+left to right direction
+skinparam componentStyle rectangle
 
-MAIN --> CLI
-MAIN --> APP
-MAIN --> INFRA
-CLI --> APP
-APP --> MODEL
-INFRA --> APP : 实现存取接口
-INFRA --> MODEL
+component "main.ts\n装配入口" as MAIN
+package "src/cli" {
+  component "输入解析与文字反馈\nCli / Tokenizer" as CLI
+}
+package "src/application" {
+  component "编辑命令与历史\nEditCommand / CommandHistory" as APP
+  interface "DocumentStore\n存取接口" as STORE
+}
+package "src/model" {
+  component "图形树与行为\nSvgDocument / Shape / Group / ShapeFactory" as MODEL
+}
+package "src/infrastructure" {
+  component "SvgFileStore" as FILE
+  component "SvgCodec\nSVG 与模型转换" as CODEC
+}
+
+MAIN --> CLI : 启动
+MAIN --> APP : 装配
+MAIN --> FILE : 注入实现
+CLI --> APP : 提交编辑请求
+APP --> MODEL : 执行图形行为
+APP --> STORE : 读写文档
+FILE ..> STORE : 实现
+FILE --> CODEC : 使用
+CODEC --> MODEL : 转换
 @enduml
 ```
 
 ### 设计模式的选择
 
 - **Command（题目要求）**：每个成功的图形编辑操作是一个命令对象，负责执行并保存撤销所需的信息；执行器维护 undo/redo 栈。一条命令对应一个撤销单元，失败命令不入栈。删除、分组和层级调整需要保存原父容器与原位置，不能只保存图形 id。
+- 其中 `Cli` 把输入转换为命令请求，`CommandHistory` 是执行与历史管理者，各个 `EditCommand` 是命令对象，`Shape` / `SvgDocument` 是实际执行业务行为的接收者。`move`、`scale`、`set` 共用 `ShapeEditCommand`：回调选择接收者的方法，命令对象统一保存编辑前状态并负责撤销。这样保留了 Command 的执行与撤销边界，同时避免为三个相同生命周期的动作重复建类。
 - **Composite 语义**：叶子图形与 `<g>` 容器共享图形抽象。容器把移动、缩放等操作应用到子孙；调用方不按图形类型重复写分支。模型的公开行为由对象自身负责，避免公共数据袋。
 - 本阶段暂不建立通用插件框架。题目中的 `box` 是后续阶段目标，Phase 1 的内置类型只有 `rect`、`circle`、`ellipse`、`line`、`text`、`g`。
 
@@ -114,13 +130,21 @@ INFRA --> MODEL
 - 将真实生成的 SVG 交给独立工具 `xmllint --noout` 检查，确认 XML 格式有效；文件包含嵌套 `<g>`、六种内置图形中的五种叶子、样式与已转义的中文文本。自动化测试继续覆盖第六种叶子和读写往返。
 - 复核架构后发现初版图遗漏了 `cli → model` 直接依赖，且“应用层经存取接口访问文件”的描述比实际实现更宽。下方按真实导入关系修订，不把计划描述成已完成的隔离。
 
+### 迭代 10：结构编辑失败恢复
+
+- 严格复核指出分组与解组虽然先验证参数，但多次移除、插入期间若抛错，可能留下半完成的图形树。先增加两个故障注入测试：分别在分组接入第二个图形、解组提升第一个子图形之后抛错；测试首次运行均失败，证明风险可以复现。另测试了分组撤销中途失败时，原树与撤销历史仍可重试。
+- 在 `SvgDocument.changeStructureAtomically` 中只保存节点引用、父子关系和顺序，不复制图形几何或整份 SVG。发生异常时恢复原树，再原样抛出错误。`group`、`ungroup`、`addto`、`front/back` 的多步骤执行与撤销均通过此边界；失败命令仍不会进入历史。
+- 补充 Command 参与者的实际映射，以及为何三种基本几何编辑共用 `ShapeEditCommand`。这次没有重写 CLI 或扩展 SVG 的 `transform` 支持；已知的 `CLI → MODEL` 依赖仍在下方如实记录。
+
 ### 与 AI 协作中的关键判断和纠正
 
 1. 初版讨论先区分了 CLI 与 VS Code 插件。依据本阶段命令表，选择只做终端入口；题目中描述的 `box` 插件留到后续阶段，没有提前引入注册框架。
-2. CLI 骨架的管道输入测试暴露了“输入关闭后再次显示提示符”的错误；修复关闭状态判断后再推进图形功能。这说明运行测试比只阅读生成代码更可靠。
-3. 对撤销方案做过取舍：只记录单次编辑的旧几何/属性或原父容器与位置，避免每次编辑复制整份文档。跨容器分组的测试进一步确认了撤销后的层级与顺序。
-4. 用户指出“自动化测试”不等于“测试驱动开发”。前几轮测试是伴随实现逐步补齐；迭代 8 才明确先写并运行失败的验收测试，再完成实现。文档按真实过程记录，不将整个项目称为严格 TDD。
-5. 对外部 SVG，决定在不支持的标签、属性或变换上明确报错，避免解析时静默丢失信息。后续阶段若扩展 SVG 子集，应先给解析、模型行为和往返测试增加一致的能力。
+2. **撤销到底保存什么状态？** 曾比较“每次编辑复制整个文档”和“由命令保存恢复自身所需的信息”。最终让几何编辑保存目标及子孙的旧状态，让删除、分组和改层级的命令保存节点引用、原父容器与同级位置。这样一条命令仍对应一次完整撤销，也避免普通编辑反复复制整份 SVG。跨容器分组、删除后恢复位置以及 redo 清空的测试检验了这一选择。
+3. **创建时归属与事后调整如何共存？** 题目同时提供 `create ... in <gid>`、`group` 和 `addto`。最终由 `SvgDocument` 统一维护一棵图形树和唯一 id：`in` 在创建时确定父容器，`group` 按文档顺序收编已有节点，`addto` 改变已有节点的父容器。它们对应不同操作时机，但共用同一套父子关系约束；跨容器分组及撤销测试检查了原顺序能否恢复。
+4. **参数预检能否保证失败不改状态？** 初版结构命令先检查 id、祖先关系和目标类型，但 `group`、`ungroup` 的执行仍包含多次移除和插入。审查后先把异常注入到已发生一次修改的位置，测试确实观察到半完成的树。随后只对结构关系做临时快照，失败时恢复原树并保留原异常；新的测试还检查撤销中途失败后可以重试。正常编辑仍由各命令记录精确撤销信息，结构快照只服务于多步骤操作的失败恢复。
+5. **`read` 应接受多大范围的 SVG？** 任意 SVG 还可能包含 `path`、`transform`、CSS 等当前模型无法表达的内容。最终用 XML 解析器处理格式和转义，只把六种内置元素及其可表示的属性转换为模型；遇到不支持的内容明确报错。`read` 在解析成功后才替换当前文档，避免失败时丢失正在编辑的内容。六种图形的写出读回、缺 id 补全和不支持输入测试检验了这个边界。
+6. **初版依赖规则是否真的落地？** 初版设想 CLI 只依赖应用层；实现核查发现 `Cli` 直接构造 `SvgDocument`、调用 `ShapeFactory`，并读取模型生成 `tree/show`。最终没有把这条依赖包装成“完全隔离”：一致性自查画出实际箭头，说明这是当前版本的简化和后续增加其他入口时的重构点。文件解析仍留在基础设施层，模型没有反向依赖 CLI 或文件系统。
+7. **测试证据如何表述？** 早期模型和命令测试主要伴随实现增加，不能据此称整个项目严格遵循 TDD。迭代 8 的文件命令和迭代 10 的失败恢复先写测试、观察失败，再实现并复跑；文档分别记录了这个顺序。质量结论限定在已有自动化测试、真实 CLI 会话及生成 SVG 的 XML 检查覆盖的行为内。
 
 ## 一致性自查
 
@@ -132,22 +156,47 @@ INFRA --> MODEL
 
 ### 2. 依赖方向规则是否被违反？
 
-按 `src/` 中的 `import` 抽样检查，实际编译时依赖如下。箭头表示“左侧导入右侧”：
+按 `src/` 中的 `import` 检查，实际编译时依赖如下。图中只展开能解释职责和依赖的代表性类型；同类的六种图形、各个具体编辑命令仍归在各自包内。实线箭头表示使用或导入，虚线标出接口实现：
 
 ```plantuml
 @startuml
-component "main.ts" as MAIN
-component "CLI" as CLI
-component "应用层" as APP
-component "模型层" as MODEL
-component "SVG 文件读写" as INFRA
-MAIN --> CLI
-MAIN --> INFRA
-CLI --> APP
-CLI --> MODEL : 与初版规则不同
-APP --> MODEL
-INFRA --> APP : 实现 DocumentStore 接口
-INFRA --> MODEL
+left to right direction
+skinparam componentStyle rectangle
+
+component "main.ts\n装配入口" as MAIN
+package "src/cli" {
+  component "Cli\n命令分发、会话与输出" as CLI
+  component "Tokenizer" as TOKENIZER
+}
+package "src/application" {
+  component "CommandHistory\nEditCommand 及具体命令" as COMMANDS
+  interface "DocumentStore" as STORE
+}
+package "src/model" {
+  component "SvgDocument\n唯一 id、父子关系、结构恢复" as DOC
+  component "Shape / Group\n图形行为与容器递归" as SHAPES
+  component "ShapeFactory\n内置类型构造" as FACTORY
+}
+package "src/infrastructure" {
+  component "SvgFileStore" as FILE
+  component "SvgCodec\nXML 解析与序列化" as CODEC
+}
+
+MAIN --> CLI : 启动
+MAIN --> FILE : 注入存取实现
+CLI --> TOKENIZER : 解析参数
+CLI --> COMMANDS : 执行、撤销与重做
+CLI --> STORE : read / save
+CLI --> DOC : init / canvas / tree
+CLI --> FACTORY : create
+COMMANDS --> DOC : 修改图形树
+COMMANDS --> SHAPES : 调用图形行为
+DOC --> SHAPES : 保存层级
+FACTORY --> SHAPES : 构造
+FILE ..> STORE : 实现
+FILE --> CODEC : 读写转换
+CODEC --> DOC : 解析与生成
+CODEC --> FACTORY : 构造图形
 @enduml
 ```
 
@@ -163,11 +212,11 @@ INFRA --> MODEL
 | 范围 | 证据 | 结论 |
 | --- | --- | --- |
 | 六种图形与嵌套容器 | `test/model.test.mjs` | 创建、统一几何操作、父子关系、唯一 id 与循环拒绝均有测试。 |
-| Command 与 undo/redo | `test/model.test.mjs`、`test/cli.test.mjs` | 删除位置、组的跨容器收编、解组、移入容器、前后顺序、失败命令不入历史及 redo 清空均有测试。 |
+| Command 与 undo/redo | `test/model.test.mjs`、`test/cli.test.mjs` | 删除位置、组的跨容器收编、解组、移入容器、前后顺序、失败命令不入历史及 redo 清空均有测试；结构编辑与撤销中途抛错后恢复原树的故障注入测试通过。 |
 | SVG 格式 | `test/codec.test.mjs` | 六种图形、画布、样式、顺序及转义文本写出后读回；缺 id 补全且避开已有 id；非法或不支持的输入报错。 |
 | 文件与 CLI | `test/cli.io.test.mjs` | 实际临时文件的 `read/save`、路径复用、失败不改文档和历史、画布查询及修改后的历史阻断均有测试。 |
 | 完整入口 | `npm run cli` 输入一段真实命令序列 | 9 个元素保存后读回，`tree/show` 的层级、尺寸和属性符合预期；`xmllint --noout` 验证生成文件是合法 XML。 |
-| 构建与检查 | `npm run check`、`npm test`、`git diff --check` | TypeScript 检查通过；自动化测试 24 项通过；改动无空白错误。 |
+| 构建与检查 | `npm run check`、`npm test`、`git diff --check` | TypeScript 检查通过；自动化测试 27 项通过；改动无空白错误。 |
 
 ### 范围与限制
 

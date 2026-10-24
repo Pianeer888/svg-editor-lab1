@@ -22,15 +22,21 @@ export class UngroupCommand implements EditCommand {
     this.parentId = parentId;
     this.index = index;
     this.children = [...shape.children];
-    for (const child of this.children) this.document.remove(child.id);
-    this.document.remove(this.id);
-    this.children.forEach((child, offset) => this.document.insert(child, parentId, index + offset));
+    this.document.changeStructureAtomically(() => {
+      for (const child of this.children) this.document.remove(child.id);
+      this.document.remove(this.id);
+      this.children.forEach((child, offset) => this.document.insert(child, parentId, index + offset));
+    });
   }
 
   undo(): void {
     if (!this.group || this.parentId === undefined) throw new Error('command was not executed');
-    for (const child of this.children) this.document.remove(child.id);
-    this.document.insert(this.group, this.parentId, this.index);
-    for (const child of this.children) this.document.add(child, this.id);
+    const group = this.group;
+    const parentId = this.parentId;
+    this.document.changeStructureAtomically(() => {
+      for (const child of this.children) this.document.remove(child.id);
+      this.document.insert(group, parentId, this.index);
+      for (const child of this.children) this.document.add(child, this.id);
+    });
   }
 }

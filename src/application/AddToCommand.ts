@@ -20,13 +20,18 @@ export class AddToCommand implements EditCommand {
       if (parent === original.shape) throw new Error('cannot add a container into its own descendant');
     }
     this.original = original;
-    this.document.remove(this.id);
-    this.document.add(original.shape, this.groupId);
+    this.document.changeStructureAtomically(() => {
+      this.document.remove(this.id);
+      this.document.add(original.shape, this.groupId);
+    });
   }
 
   undo(): void {
     if (!this.original) throw new Error('command was not executed');
-    this.document.remove(this.id);
-    this.document.insert(this.original.shape, this.original.parentId, this.original.index);
+    const original = this.original;
+    this.document.changeStructureAtomically(() => {
+      this.document.remove(this.id);
+      this.document.insert(original.shape, original.parentId, original.index);
+    });
   }
 }
