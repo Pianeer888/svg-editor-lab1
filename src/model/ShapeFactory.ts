@@ -8,6 +8,38 @@ import { Group } from './Group.js';
 
 /** The one type-name dispatch point. A later phase can replace this with registration. */
 export class ShapeFactory {
+  private static readonly svgGeometry: Readonly<Record<string, readonly string[]>> = {
+    rect: ['x', 'y', 'width', 'height'],
+    circle: ['cx', 'cy', 'r'],
+    ellipse: ['cx', 'cy', 'rx', 'ry'],
+    line: ['x1', 'y1', 'x2', 'y2'],
+    text: ['x', 'y'],
+    g: [],
+  };
+
+  /** The same type dispatch point also constructs shapes read from SVG. */
+  static fromSvg(type: string, id: string, attributes: Readonly<Record<string, string>>, content: string): Shape {
+    const geometry = this.svgGeometry[type];
+    if (!geometry) throw new Error(`unsupported SVG element: ${type}`);
+    const allowed = new Set(['id', 'fill', 'stroke', 'stroke-width', ...geometry]);
+    for (const name of Object.keys(attributes)) {
+      if (!allowed.has(name)) throw new Error(`unsupported SVG attribute: ${name}`);
+    }
+    const args = geometry.map(name => {
+      const value = attributes[name];
+      if (value === undefined) throw new Error(`missing SVG attribute: ${name}`);
+      return value;
+    });
+    if (type === 'text') args.push(content);
+    else if (content.trim()) throw new Error(`unexpected text in <${type}>`);
+    const shape = this.create(type, id, args);
+    for (const name of ['fill', 'stroke', 'stroke-width']) {
+      const value = attributes[name];
+      if (value !== undefined) shape.set(name, value);
+    }
+    return shape;
+  }
+
   static create(type: string, id: string, args: string[]): Shape {
     const layouts: Record<string, [number, number]> = {
       rect: [4, 5], circle: [3, 4], ellipse: [4, 5], line: [4, 5], text: [3, 3], g: [0, 0],
