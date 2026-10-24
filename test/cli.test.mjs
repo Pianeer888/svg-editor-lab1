@@ -87,3 +87,28 @@ test('group move undo restores descendants and init blocks old history', async (
   assert.match(output, /x=1 y=2 width=3 height=4/);
   assert.match(output, /error: undo not allowed after io command/);
 });
+
+test('CLI groups existing shapes as one edit and rejects invalid grouping without changing history', async () => {
+  const output = await run([
+    'init', 'create g parent', 'create rect a 0 0 1 1 in parent',
+    'create circle b 1 1 1 in parent', 'group pair b a', 'tree parent',
+    'group bad parent a', 'undo', 'tree parent', 'redo', 'tree parent',
+  ]);
+  assert.match(output, /g#pair created with 2 children/);
+  assert.match(output, /error: cannot group a container into its own descendant: parent/);
+  assert.match(output, /undid: g#pair created with 2 children/);
+  assert.match(output, /redid: g#pair created with 2 children/);
+  assert.match(output, /g#pair\n    ├── rect#a[\s\S]*└── circle#b/);
+});
+
+test('CLI structural commands change containment and drawing order', async () => {
+  const output = await run([
+    'init', 'create g outer', 'create g inner in outer',
+    'create rect a 0 0 1 1 in outer', 'create rect b 0 0 1 1 in outer',
+    'addto inner a', 'ungroup inner', 'front a', 'back b', 'tree outer',
+  ]);
+  assert.match(output, /a added to g#inner/);
+  assert.match(output, /g#inner ungrouped/);
+  assert.match(output, /b moved to back/);
+  assert.match(output, /g#outer\n├── rect#b[\s\S]*└── rect#a/);
+});

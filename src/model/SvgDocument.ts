@@ -12,6 +12,14 @@ export class SvgDocument {
 
   get children(): readonly Shape[] { return this.rootShapes; }
 
+  location(id: string): { shape: Shape; parentId?: string; index: number } {
+    const shape = this.find(id);
+    if (!shape) throw new Error(`no such shape: ${id}`);
+    const parent = shape.parent;
+    return { shape, ...(parent === null ? {} : { parentId: parent.id }),
+      index: (parent === null ? this.rootShapes : parent.children).indexOf(shape) };
+  }
+
   find(id: string): Shape | undefined {
     for (const shape of this.walk()) if (shape.id === id) return shape;
     return undefined;

@@ -9,6 +9,10 @@ import { CommandHistory } from '../application/CommandHistory.js';
 import { CreateCommand } from '../application/CreateCommand.js';
 import { DeleteCommand } from '../application/DeleteCommand.js';
 import { ShapeEditCommand } from '../application/ShapeEditCommand.js';
+import { GroupCommand } from '../application/GroupCommand.js';
+import { UngroupCommand } from '../application/UngroupCommand.js';
+import { AddToCommand } from '../application/AddToCommand.js';
+import { ReorderCommand } from '../application/ReorderCommand.js';
 
 export class Cli {
   private document: SvgDocument | null = null;
@@ -37,7 +41,7 @@ export class Cli {
     switch (command) {
       case 'help':
         this.expectCount(args, 0, 0, 'help');
-        this.output.write('init [w] [h]\ncreate <type> <id> [params…] [in <containerId>]\ndelete <id>\nmove <id> <dx> <dy>\nscale <id> <factor>\nset <id> <attr> <value>\nundo | redo\ntree [id]\nshow <id>\nOther commands will be added in later commits.\n');
+        this.output.write('init [w] [h]\ncreate <type> <id> [params…] [in <containerId>]\ndelete <id>\nmove <id> <dx> <dy>\nscale <id> <factor>\nset <id> <attr> <value>\ngroup <newGid> <id1> <id2>…\nungroup <gid>\naddto <gid> <id>\nfront <id> | back <id>\nundo | redo\ntree [id]\nshow <id>\nFile and canvas commands will be added in a later commit.\n');
         return;
       case 'init': this.init(args); return;
       case 'create': this.create(args); return;
@@ -47,6 +51,11 @@ export class Cli {
       case 'move': this.move(args); return;
       case 'scale': this.scale(args); return;
       case 'set': this.set(args); return;
+      case 'group': this.group(args); return;
+      case 'ungroup': this.ungroup(args); return;
+      case 'addto': this.addto(args); return;
+      case 'front': this.reorder(args, 'front'); return;
+      case 'back': this.reorder(args, 'back'); return;
       case 'undo':
         this.expectCount(args, 0, 0, 'undo');
         this.requireDocument();
@@ -109,6 +118,34 @@ export class Cli {
     const attribute = args[1]!; const value = args[2]!;
     this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}`, shape, () => shape.set(attribute, value)));
     this.output.write(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}\n`);
+  }
+
+  private group(args: string[]): void {
+    if (args.length < 3) throw new Error('usage: group <newGid> <id1> <id2>…');
+    const command = new GroupCommand(this.requireDocument(), args[0]!, args.slice(1));
+    this.history.execute(command);
+    this.output.write(`${command.description}\n`);
+  }
+
+  private ungroup(args: string[]): void {
+    this.expectCount(args, 1, 1, 'ungroup <gid>');
+    const command = new UngroupCommand(this.requireDocument(), args[0]!);
+    this.history.execute(command);
+    this.output.write(`${command.description}\n`);
+  }
+
+  private addto(args: string[]): void {
+    this.expectCount(args, 2, 2, 'addto <gid> <id>');
+    const command = new AddToCommand(this.requireDocument(), args[0]!, args[1]!);
+    this.history.execute(command);
+    this.output.write(`${command.description}\n`);
+  }
+
+  private reorder(args: string[], direction: 'front' | 'back'): void {
+    this.expectCount(args, 1, 1, `${direction} <id>`);
+    const command = new ReorderCommand(this.requireDocument(), args[0]!, direction);
+    this.history.execute(command);
+    this.output.write(`${command.description}\n`);
   }
 
   private tree(args: string[]): void {

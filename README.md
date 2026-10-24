@@ -10,7 +10,7 @@ npm ci
 npm run cli
 ```
 
-当前已支持 `init`、六种图形的 `create`（含 `in <容器 id>`）、`delete`、`move`、`scale`、`set`、`undo`、`redo`、`tree`、`show`、`help`。输入 `#` 开头的注释行会被忽略；分组、层级和文件命令将在后续迭代实现。按 `Ctrl+D` 结束程序。
+当前已支持 `init`、六种图形的 `create`（含 `in <容器 id>`）、`delete`、`move`、`scale`、`set`、`group`、`ungroup`、`addto`、`front`、`back`、`undo`、`redo`、`tree`、`show`、`help`。输入 `#` 开头的注释行会被忽略；文件和画布命令将在后续迭代实现。按 `Ctrl+D` 结束程序。
 
 检查 TypeScript 类型或单独编译：
 
