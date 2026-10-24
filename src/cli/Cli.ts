@@ -13,12 +13,14 @@ import { GroupCommand } from '../application/GroupCommand.js';
 import { UngroupCommand } from '../application/UngroupCommand.js';
 import { AddToCommand } from '../application/AddToCommand.js';
 import { ReorderCommand } from '../application/ReorderCommand.js';
+import type { DocumentStore } from '../application/DocumentStore.js';
 
 export class Cli {
   private document: SvgDocument | null = null;
+  private filePath: string | null = null;
   private readonly history = new CommandHistory();
 
-  constructor(private readonly input: Readable, private readonly output: Writable) {}
+  constructor(private readonly input: Readable, private readonly output: Writable, private readonly store: DocumentStore) {}
 
   async run(): Promise<void> {
     const lines = createInterface({ input: this.input, output: this.output });
@@ -41,9 +43,12 @@ export class Cli {
     switch (command) {
       case 'help':
         this.expectCount(args, 0, 0, 'help');
-        this.output.write('init [w] [h]\ncreate <type> <id> [params…] [in <containerId>]\ndelete <id>\nmove <id> <dx> <dy>\nscale <id> <factor>\nset <id> <attr> <value>\ngroup <newGid> <id1> <id2>…\nungroup <gid>\naddto <gid> <id>\nfront <id> | back <id>\nundo | redo\ntree [id]\nshow <id>\nFile and canvas commands will be added in a later commit.\n');
+        this.output.write('init [w] [h]\nread <file.svg>\nsave [file.svg]\ncanvas [w] [h]\ncreate <type> <id> [params…] [in <containerId>]\ndelete <id>\nmove <id> <dx> <dy>\nscale <id> <factor>\nset <id> <attr> <value>\ngroup <newGid> <id1> <id2>…\nungroup <gid>\naddto <gid> <id>\nfront <id> | back <id>\nundo | redo\ntree [id]\nshow <id>\n');
         return;
       case 'init': this.init(args); return;
+      case 'read': this.read(args); return;
+      case 'save': this.save(args); return;
+      case 'canvas': this.canvas(args); return;
       case 'create': this.create(args); return;
       case 'tree': this.tree(args); return;
       case 'show': this.show(args); return;
@@ -74,8 +79,42 @@ export class Cli {
     const width = args.length === 0 ? 800 : this.number(args[0]!);
     const height = args.length === 0 ? 600 : this.number(args[1]!);
     this.document = new SvgDocument(width, height);
+    this.filePath = null;
     this.history.blockAfterIo();
     this.output.write(`canvas ${width}x${height} created\n`);
+  }
+
+  private read(args: string[]): void {
+    this.expectCount(args, 1, 1, 'read <file.svg>');
+    const path = args[0]!;
+    const { document, warnings } = this.store.load(path);
+    this.document = document;
+    this.filePath = path;
+    this.history.blockAfterIo();
+    for (const warning of warnings) this.output.write(`${warning}\n`);
+    this.output.write(`read ${path} (${[...document.walk()].length} elements)\n`);
+  }
+
+  private save(args: string[]): void {
+    this.expectCount(args, 0, 1, 'save [file.svg]');
+    const document = this.requireDocument();
+    const path = args[0] ?? this.filePath;
+    if (path === null) throw new Error("no file path. use 'save <file.svg>' first");
+    this.store.save(path, document);
+    this.filePath = path;
+    this.history.blockAfterIo();
+    this.output.write(`saved to ${path} (${[...document.walk()].length} elements)\n`);
+  }
+
+  private canvas(args: string[]): void {
+    this.expectCount(args, 0, 2, 'canvas [w] [h]');
+    if (args.length === 1) throw new Error('usage: canvas [w] [h]');
+    const document = this.requireDocument();
+    if (args.length === 2) {
+      document.resize(this.number(args[0]!), this.number(args[1]!));
+      this.history.blockAfterIo();
+    }
+    this.output.write(`canvas ${document.width}x${document.height}\n`);
   }
 
   private create(args: string[]): void {

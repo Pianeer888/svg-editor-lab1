@@ -3,11 +3,12 @@ import test from 'node:test';
 import { Readable, Writable } from 'node:stream';
 import { Cli } from '../dist/cli/Cli.js';
 import { Tokenizer } from '../dist/cli/Tokenizer.js';
+import { SvgFileStore } from '../dist/infrastructure/SvgFileStore.js';
 
 async function run(lines) {
   let output = '';
   const sink = new Writable({ write(chunk, _encoding, callback) { output += chunk.toString(); callback(); } });
-  await new Cli(Readable.from([lines.join('\n') + '\n']), sink).run();
+  await new Cli(Readable.from([lines.join('\n') + '\n']), sink, new SvgFileStore()).run();
   return output;
 }
 

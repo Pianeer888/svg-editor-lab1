@@ -10,9 +10,11 @@ npm ci
 npm run cli
 ```
 
-当前已支持 `init`、六种图形的 `create`（含 `in <容器 id>`）、`delete`、`move`、`scale`、`set`、`group`、`ungroup`、`addto`、`front`、`back`、`undo`、`redo`、`tree`、`show`、`help`。输入 `#` 开头的注释行会被忽略；文件和画布命令将在后续迭代实现。按 `Ctrl+D` 结束程序。
+当前已支持 `init`、`read`、`save`、`canvas`、六种图形的 `create`（含 `in <容器 id>`）、`delete`、`move`、`scale`、`set`、`group`、`ungroup`、`addto`、`front`、`back`、`undo`、`redo`、`tree`、`show`、`help`。输入 `#` 开头的注释行会被忽略；按 `Ctrl+D` 结束程序。
 
-SVG 与图形模型之间的转换已在 `src/infrastructure/SvgCodec.ts` 实现并经过独立测试，但尚未接入 CLI 的 `read`/`save`。读入时只接受本阶段六种图形、可表示的几何与样式属性以及从 `(0,0)` 开始且与画布尺寸一致的 `viewBox`；其他内容会报错，避免静默丢失。
+例如输入 `init 400 200`、`create rect r1 10 20 100 50 red`、`save demo.svg`，随后可在浏览器打开 `demo.svg`。`read demo.svg` 会重新载入文件；若文件中的图形缺少 id，会打印 `warning:`。`save` 不带路径时使用上次成功读取或保存的路径；`init` 后第一次保存需要显式给出路径。
+
+SVG 与图形模型之间的转换位于 `src/infrastructure/SvgCodec.ts`，文件访问由 `SvgFileStore` 实现。读入时只接受本阶段六种图形、可表示的几何与样式属性以及从 `(0,0)` 开始且与画布尺寸一致的 `viewBox`；其他内容会报错，避免静默丢失。
 
 检查 TypeScript 类型或单独编译：
 

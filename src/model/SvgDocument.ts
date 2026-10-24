@@ -3,14 +3,28 @@ import { Shape } from './Shape.js';
 
 export class SvgDocument {
   private readonly rootShapes: Shape[] = [];
+  private widthValue: number;
+  private heightValue: number;
 
-  constructor(public readonly width: number = 800, public readonly height: number = 600) {
+  constructor(width: number = 800, height: number = 600) {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
       throw new Error('canvas dimensions must be positive');
     }
+    this.widthValue = width;
+    this.heightValue = height;
   }
 
+  get width(): number { return this.widthValue; }
+  get height(): number { return this.heightValue; }
   get children(): readonly Shape[] { return this.rootShapes; }
+
+  resize(width: number, height: number): void {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      throw new Error('canvas dimensions must be positive');
+    }
+    this.widthValue = width;
+    this.heightValue = height;
+  }
 
   location(id: string): { shape: Shape; parentId?: string; index: number } {
     const shape = this.find(id);
