@@ -1,0 +1,19 @@
+{
+  "name": "svg-outline-lab",
+  "displayName": "SVG Outline Lab",
+  "description": "SVG file badges and document outline for the software design lab",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:xml",
+    "onLanguage:svg",
+    "onStartupFinished"
+  ],
+  "dependencies": {
+    "saxes": "6.0.0"
+  }
+}

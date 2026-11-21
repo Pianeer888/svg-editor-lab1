@@ -1,5 +1,7 @@
 # SVG 编辑器 Phase 1：设计与过程记录
 
+Phase 2 的实施计划见 [phase2-plan.md](./phase2-plan.md)；VS Code 扩展的启动与设计分析见 [vscode-extension/README.md](../vscode-extension/README.md)。
+
 > 本文保留第一轮的设计假设，并记录每轮实现与最终核查。初版架构图用于对照演化过程；实际依赖见文末“一致性自查”。
 
 ## 架构方案
