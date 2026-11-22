@@ -1,69 +1,16 @@
-import { Shape } from './Shape.js';
-import { Rect } from './Rect.js';
-import { Circle } from './Circle.js';
-import { Ellipse } from './Ellipse.js';
-import { Line } from './Line.js';
-import { Text } from './Text.js';
-import { Group } from './Group.js';
+import type { Shape } from './Shape.js';
+import type { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
+import { createDefaultExtensions } from '../extensions/DefaultExtensions.js';
+import type { SvgShapeInput } from '../extensions/ShapeProvider.js';
 
-/** The one type-name dispatch point. A later phase can replace this with registration. */
 export class ShapeFactory {
-  private static readonly svgGeometry: Readonly<Record<string, readonly string[]>> = {
-    rect: ['x', 'y', 'width', 'height'],
-    circle: ['cx', 'cy', 'r'],
-    ellipse: ['cx', 'cy', 'rx', 'ry'],
-    line: ['x1', 'y1', 'x2', 'y2'],
-    text: ['x', 'y'],
-    g: [],
-  };
+  constructor(private readonly extensions: ExtensionRegistry = createDefaultExtensions()) {}
 
-  /** The same type dispatch point also constructs shapes read from SVG. */
-  static fromSvg(type: string, id: string, attributes: Readonly<Record<string, string>>, content: string): Shape {
-    const geometry = this.svgGeometry[type];
-    if (!geometry) throw new Error(`unsupported SVG element: ${type}`);
-    const allowed = new Set(['id', 'fill', 'stroke', 'stroke-width', ...geometry]);
-    for (const name of Object.keys(attributes)) {
-      if (!allowed.has(name)) throw new Error(`unsupported SVG attribute: ${name}`);
-    }
-    const args = geometry.map(name => {
-      const value = attributes[name];
-      if (value === undefined) throw new Error(`missing SVG attribute: ${name}`);
-      return value;
-    });
-    if (type === 'text') args.push(content);
-    else if (content.trim()) throw new Error(`unexpected text in <${type}>`);
-    const shape = this.create(type, id, args);
-    for (const name of ['fill', 'stroke', 'stroke-width']) {
-      const value = attributes[name];
-      if (value !== undefined) shape.set(name, value);
-    }
-    return shape;
+  fromSvg(input: SvgShapeInput): Shape {
+    return this.extensions.readShape(input);
   }
 
-  static create(type: string, id: string, args: string[]): Shape {
-    const layouts: Record<string, [number, number]> = {
-      rect: [4, 5], circle: [3, 4], ellipse: [4, 5], line: [4, 5], text: [3, 3], g: [0, 0],
-    };
-    const layout = layouts[type];
-    if (!layout) throw new Error(`unknown shape type: ${type} (is the plugin loaded?)`);
-    if (args.length < layout[0] || args.length > layout[1]) throw new Error(`usage: create ${type} <id> <params…>`);
-    const numericCount = type === 'text' ? 2 : type === 'g' ? 0 : layout[0];
-    const numbers = args.slice(0, numericCount).map((arg) => {
-      if (arg.trim() === '' || !Number.isFinite(Number(arg))) throw new Error(`invalid number: ${arg}`);
-      return Number(arg);
-    });
-    let shape: Shape;
-    switch (type) {
-      case 'rect': shape = new Rect(id, numbers[0]!, numbers[1]!, numbers[2]!, numbers[3]!); break;
-      case 'circle': shape = new Circle(id, numbers[0]!, numbers[1]!, numbers[2]!); break;
-      case 'ellipse': shape = new Ellipse(id, numbers[0]!, numbers[1]!, numbers[2]!, numbers[3]!); break;
-      case 'line': shape = new Line(id, numbers[0]!, numbers[1]!, numbers[2]!, numbers[3]!); break;
-      case 'text': shape = new Text(id, numbers[0]!, numbers[1]!, args[2]!); break;
-      case 'g': shape = new Group(id); break;
-      default: throw new Error(`unknown shape type: ${type} (is the plugin loaded?)`);
-    }
-    const color = args[numericCount];
-    if (color !== undefined && type !== 'text' && type !== 'g') shape.set(type === 'line' ? 'stroke' : 'fill', color);
-    return shape;
+  create(type: string, id: string, args: readonly string[]): Shape {
+    return this.extensions.createShape(type, id, args);
   }
 }

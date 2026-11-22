@@ -1,0 +1,8 @@
+Commit 3 framework baseline
+
+TypeScript files: 31
+Source lines: 1185
+Import edges: 97
+Maximum outgoing imports: 20 (src/cli/Cli.ts)
+
+Generated with: npm run metrics

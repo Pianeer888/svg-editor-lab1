@@ -2,25 +2,27 @@ import { SaxesParser, type SaxesTagNS } from 'saxes';
 import { SvgDocument } from '../model/SvgDocument.js';
 import { ShapeFactory } from '../model/ShapeFactory.js';
 import { Group } from '../model/Group.js';
-import { Text } from '../model/Text.js';
 import type { Shape } from '../model/Shape.js';
+import type { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
+import { createDefaultExtensions } from '../extensions/DefaultExtensions.js';
+import type { SvgShapeInput } from '../extensions/ShapeProvider.js';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 type XmlNode = { name: string; attributes: Record<string, string>; children: XmlNode[]; text: string };
 
 export class SvgCodec {
-  static serialize(document: SvgDocument): string {
+  static serialize(document: SvgDocument, extensions: ExtensionRegistry = createDefaultExtensions()): string {
     const lines = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       `<svg xmlns="${SVG_NAMESPACE}" width="${document.width}" height="${document.height}" viewBox="0 0 ${document.width} ${document.height}">`,
     ];
-    for (const child of document.children) this.writeShape(child, 1, lines);
+    for (const child of document.children) this.writeShape(child, 1, lines, extensions);
     lines.push('</svg>');
     return `${lines.join('\n')}\n`;
   }
 
-  static parse(xml: string): { document: SvgDocument; warnings: string[] } {
+  static parse(xml: string, extensions: ExtensionRegistry = createDefaultExtensions()): { document: SvgDocument; warnings: string[] } {
     let root: XmlNode | undefined;
     const stack: XmlNode[] = [];
     const parser = new SaxesParser({ xmlns: true });
@@ -75,7 +77,8 @@ export class SvgCodec {
     const usedIds = new Set(explicitIds);
     const counters = new Map<string, number>();
     const warnings: string[] = [];
-    const add = (node: XmlNode, parentId?: string): void => {
+    const shapes = new ShapeFactory(extensions);
+    const prepare = (node: XmlNode): SvgShapeInput => {
       let id = node.attributes.id;
       if (!id) {
         let number = counters.get(node.name) ?? 0;
@@ -84,34 +87,30 @@ export class SvgCodec {
         usedIds.add(id);
         warnings.push(`warning: assigned id ${id} to unnamed <${node.name}>`);
       }
-      const shape = ShapeFactory.fromSvg(node.name, id, node.attributes, node.text);
-      if (!(shape instanceof Group) && node.children.length > 0) throw new Error(`unsupported nested content in <${node.name}>`);
-      document.add(shape, parentId);
-      for (const child of node.children) add(child, id);
+      return {
+        id, element: node.name, attributes: node.attributes, content: node.text,
+        children: node.children.map(prepare),
+      };
     };
-    for (const child of root.children) add(child);
+    for (const child of root.children) document.add(shapes.fromSvg(prepare(child)));
     return { document, warnings };
   }
 
-  private static writeShape(shape: Shape, depth: number, lines: string[]): void {
+  private static writeShape(shape: Shape, depth: number, lines: string[], extensions: ExtensionRegistry): void {
     const indent = '  '.repeat(depth);
-    const attributes = [`id="${this.escape(shape.id)}"`];
-    for (const [name, value] of Object.entries(shape.geometry())) {
-      if (name !== 'text') attributes.push(`${name}="${this.escape(String(value))}"`);
-    }
-    if (shape.fill !== undefined) attributes.push(`fill="${this.escape(shape.fill)}"`);
-    if (shape.stroke !== undefined) attributes.push(`stroke="${this.escape(shape.stroke)}"`);
-    if (shape.strokeWidth !== undefined) attributes.push(`stroke-width="${shape.strokeWidth}"`);
-    const start = `${indent}<${shape.type} ${attributes.join(' ')}`;
+    const encoded = extensions.writeShape(shape);
+    const attributes = Object.entries(encoded.attributes)
+      .map(([name, value]) => `${name}="${this.escape(String(value))}"`);
+    const start = `${indent}<${encoded.element} ${attributes.join(' ')}`;
     if (shape instanceof Group) {
       if (shape.children.length === 0) lines.push(`${start}/>`);
       else {
         lines.push(`${start}>`);
-        for (const child of shape.children) this.writeShape(child, depth + 1, lines);
-        lines.push(`${indent}</g>`);
+        for (const child of shape.children) this.writeShape(child, depth + 1, lines, extensions);
+        lines.push(`${indent}</${encoded.element}>`);
       }
-    } else if (shape instanceof Text) {
-      lines.push(`${start}>${this.escape(String(shape.geometry().text))}</text>`);
+    } else if (encoded.content !== undefined) {
+      lines.push(`${start}>${this.escape(encoded.content)}</${encoded.element}>`);
     } else lines.push(`${start}/>`);
   }
 

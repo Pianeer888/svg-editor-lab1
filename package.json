@@ -8,6 +8,7 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "build:extension": "tsc -p vscode-extension/tsconfig.json",
     "check:extension": "tsc -p vscode-extension/tsconfig.json --noEmit",
+    "metrics": "node scripts/metrics.mjs",
     "test": "npm run build --silent && npm run build:extension --silent && node --test test/*.test.mjs",
     "cli": "npm run build --silent && node dist/main.js"
   },

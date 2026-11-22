@@ -14,13 +14,26 @@ import { UngroupCommand } from '../application/UngroupCommand.js';
 import { AddToCommand } from '../application/AddToCommand.js';
 import { ReorderCommand } from '../application/ReorderCommand.js';
 import type { DocumentStore } from '../application/DocumentStore.js';
+import type { EditCommand } from '../application/EditCommand.js';
+import type { Command, CommandContext } from '../extensions/Command.js';
+import { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
+import { createDefaultExtensions } from '../extensions/DefaultExtensions.js';
 
-export class Cli {
+export class Cli implements CommandContext {
   private document: SvgDocument | null = null;
   private filePath: string | null = null;
   private readonly history = new CommandHistory();
+  private readonly shapes: ShapeFactory;
 
-  constructor(private readonly input: Readable, private readonly output: Writable, private readonly store: DocumentStore) {}
+  constructor(
+    private readonly input: Readable,
+    private readonly output: Writable,
+    private readonly store: DocumentStore,
+    private readonly extensions: ExtensionRegistry = createDefaultExtensions(),
+  ) {
+    this.shapes = new ShapeFactory(extensions);
+    this.registerBuiltInCommands();
+  }
 
   async run(): Promise<void> {
     const lines = createInterface({ input: this.input, output: this.output });
@@ -40,37 +53,44 @@ export class Cli {
 
   private execute(tokens: string[]): void {
     const [command, ...args] = tokens;
-    switch (command) {
-      case 'help':
-        this.expectCount(args, 0, 0, 'help');
-        this.output.write('init [w] [h]\nread <file.svg>\nsave [file.svg]\ncanvas [w] [h]\ncreate <type> <id> [params…] [in <containerId>]\ndelete <id>\nmove <id> <dx> <dy>\nscale <id> <factor>\nset <id> <attr> <value>\ngroup <newGid> <id1> <id2>…\nungroup <gid>\naddto <gid> <id>\nfront <id> | back <id>\nundo | redo\ntree [id]\nshow <id>\n');
-        return;
-      case 'init': this.init(args); return;
-      case 'read': this.read(args); return;
-      case 'save': this.save(args); return;
-      case 'canvas': this.canvas(args); return;
-      case 'create': this.create(args); return;
-      case 'tree': this.tree(args); return;
-      case 'show': this.show(args); return;
-      case 'delete': this.delete(args); return;
-      case 'move': this.move(args); return;
-      case 'scale': this.scale(args); return;
-      case 'set': this.set(args); return;
-      case 'group': this.group(args); return;
-      case 'ungroup': this.ungroup(args); return;
-      case 'addto': this.addto(args); return;
-      case 'front': this.reorder(args, 'front'); return;
-      case 'back': this.reorder(args, 'back'); return;
-      case 'undo':
-        this.expectCount(args, 0, 0, 'undo');
-        this.requireDocument();
-        this.output.write(`undid: ${this.history.undo()}\n`); return;
-      case 'redo':
-        this.expectCount(args, 0, 0, 'redo');
-        this.requireDocument();
-        this.output.write(`redid: ${this.history.redo()}\n`); return;
-      default: throw new Error(`unknown command: ${command}`);
-    }
+    const handler = command === undefined ? undefined : this.extensions.command(command);
+    if (!handler) throw new Error(`unknown command: ${command}`);
+    handler.execute(this, args);
+  }
+
+  private registerBuiltInCommands(): void {
+    const add = (name: string, usage: string, execute: (args: string[]) => void, help: string = usage): void => {
+      const command: Command = { name, usage, help, execute: (_context, args) => execute(args) };
+      this.extensions.registerCommand(command);
+    };
+    add('help', 'help', args => {
+      this.expectCount(args, 0, 0, 'help');
+      const lines = this.extensions.commands().filter(command => command.name !== 'help' && command.help)
+        .map(command => command.help);
+      this.write(`${lines.join('\n')}\n`);
+    }, '');
+    add('init', 'init [w] [h]', args => this.init(args));
+    add('read', 'read <file.svg>', args => this.read(args));
+    add('save', 'save [file.svg]', args => this.save(args));
+    add('canvas', 'canvas [w] [h]', args => this.canvas(args));
+    add('create', 'create <type> <id> [params…] [in <containerId>]', args => this.create(args));
+    add('delete', 'delete <id>', args => this.delete(args));
+    add('move', 'move <id> <dx> <dy>', args => this.move(args));
+    add('scale', 'scale <id> <factor>', args => this.scale(args));
+    add('set', 'set <id> <attr> <value>', args => this.set(args));
+    add('group', 'group <newGid> <id1> <id2>…', args => this.group(args));
+    add('ungroup', 'ungroup <gid>', args => this.ungroup(args));
+    add('addto', 'addto <gid> <id>', args => this.addto(args));
+    add('front', 'front <id>', args => this.reorder(args, 'front'), 'front <id> | back <id>');
+    add('back', 'back <id>', args => this.reorder(args, 'back'), '');
+    add('undo', 'undo', args => {
+      this.expectCount(args, 0, 0, 'undo'); this.requireDocument(); this.write(`undid: ${this.history.undo()}\n`);
+    }, 'undo | redo');
+    add('redo', 'redo', args => {
+      this.expectCount(args, 0, 0, 'redo'); this.requireDocument(); this.write(`redid: ${this.history.redo()}\n`);
+    }, '');
+    add('tree', 'tree [id]', args => this.tree(args));
+    add('show', 'show <id>', args => this.show(args));
   }
 
   private init(args: string[]): void {
@@ -123,7 +143,7 @@ export class Cli {
     const [type, id, ...rest] = args;
     let parentId: string | undefined;
     if (rest.length >= 2 && rest[rest.length - 2] === 'in') { parentId = rest.pop(); rest.pop(); }
-    const shape = ShapeFactory.create(type!, id!, rest);
+    const shape = this.shapes.create(type!, id!, rest);
     this.history.execute(new CreateCommand(doc, shape, parentId));
     this.output.write(`${shape.type}#${shape.id} created${parentId === undefined ? '' : ` in g#${parentId}`}\n`);
   }
@@ -155,7 +175,12 @@ export class Cli {
     this.expectCount(args, 3, 3, 'set <id> <attr> <value>');
     const shape = this.requireShape(this.requireDocument(), args[0]!);
     const attribute = args[1]!; const value = args[2]!;
-    this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}`, shape, () => shape.set(attribute, value)));
+    const handlers = this.extensions.attributeHandlers(shape, attribute);
+    if (handlers.length > 1) throw new Error(`conflicting attribute handlers: ${handlers.map(handler => handler.name).join(', ')}`);
+    const update = handlers[0] === undefined
+      ? () => shape.set(attribute, value)
+      : () => handlers[0]!.set(shape, attribute, value);
+    this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}`, shape, update));
     this.output.write(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}\n`);
   }
 
@@ -219,11 +244,18 @@ export class Cli {
     if (style) this.output.write(`  ${style}\n`);
   }
 
-  private suffix(shape: Shape): string { const value = shape.summary(); return value ? `  ${value}` : ''; }
-  private requireDocument(): SvgDocument {
+  private suffix(shape: Shape): string {
+    const labels = this.extensions.treeDecorators()
+      .map(decorator => decorator.decorate(shape, this.requireDocument())).filter(Boolean);
+    const value = [shape.summary(), ...labels].filter(Boolean).join(' ');
+    return value ? `  ${value}` : '';
+  }
+  requireDocument(): SvgDocument {
     if (this.document === null) throw new Error("no document. use 'init' or 'read' first");
     return this.document;
   }
+  write(message: string): void { this.output.write(message); }
+  executeEdit(command: EditCommand): void { this.history.execute(command); }
   private requireShape(doc: SvgDocument, id: string): Shape {
     const shape = doc.find(id);
     if (!shape) throw new Error(`no such shape: ${id}`);

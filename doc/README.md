@@ -4,6 +4,21 @@ Phase 2 的实施计划见 [phase2-plan.md](./phase2-plan.md)；VS Code 扩展�
 
 > 本文保留第一轮的设计假设，并记录每轮实现与最终核查。初版架构图用于对照演化过程；实际依赖见文末“一致性自查”。
 
+## Phase 2：扩展框架基线
+
+Commit 3 将变化点从条件分派改为显式注册，四个契约及调用位置如下。
+
+| 扩展点 | 契约与注册位置 | 实际调用位置 | 缺省行为与错误 |
+| --- | --- | --- | --- |
+| 图形 | `ShapeProvider`、`ExtensionRegistry.registerShape` | `ShapeFactory.create/fromSvg`、`SvgCodec.writeShape` | 注册六种内置图形；未知类型、重复提供者或写出冲突会报错。 |
+| 命令 | `Command`、`ExtensionRegistry.registerCommand` | `Cli.execute` | 全部内置命令经注册表分发；重复名称会报错，扩展命令的帮助文本进入 `help`。 |
+| 树标签 | `TreeDecorator`、`ExtensionRegistry.registerTreeDecorator` | `Cli.suffix` | 按注册顺序组合；没有标签时不增加空格，原 `tree` 输出保持不变。 |
+| 属性 | `AttributeHandler`、`ExtensionRegistry.registerAttributeHandler` | `Cli.set` | 无匹配时调用 `Shape.set`；一个匹配时作为单个 undo 单元执行；多个匹配时拒绝修改。 |
+
+`src/extensions/DefaultExtensions.ts` 是当前组合入口，`main.ts` 把同一个注册表实例交给 CLI 与文件存储。内置图形由 `BuiltInShapeProvider` 注册；SVG 编解码不再包含图形类型分支。读回时先为 XML 子树分配 id，再由提供者构造完整图形子树，最后交给文档一次检查全部 id。属性处理器失败时由 `ShapeEditCommand` 恢复修改前状态，失败操作不进入历史。带 `data-kind` 的 `<g>` 在没有专用提供者时按普通组读入，保留可表达的子图形。
+
+`test/extensions.test.mjs` 覆盖四个扩展点、属性冲突与失败回滚、标记组的缺省读回，以及 Phase 1 会话逐字节回归。首次脚本化度量保存在 [metrics/commit-3.txt](./metrics/commit-3.txt)，可通过 `npm run metrics` 重现。
+
 ## 架构方案
 
 ### 模块划分
