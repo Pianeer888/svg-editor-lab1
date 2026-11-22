@@ -58,6 +58,25 @@ test('a group cannot contain itself or an ancestor', () => {
   assert.throws(() => child.append(parent), /own descendant/);
 });
 
+test('a composite can protect required children without blocking structural rollback', () => {
+  class ProtectedGroup extends Group {
+    assertChildRemovalAllowed(child) {
+      if (child.id === 'required') throw new Error(`required child: ${child.id}`);
+    }
+  }
+  const doc = new SvgDocument();
+  doc.add(new ProtectedGroup('protected'));
+  doc.add(new Rect('required', 0, 0, 1, 1), 'protected');
+  doc.add(new Rect('loose', 1, 1, 1, 1));
+  assert.throws(() => doc.remove('required'), /required child/);
+  const before = [...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]);
+  assert.throws(() => doc.changeStructureAtomically(() => {
+    doc.remove('loose');
+    doc.remove('required');
+  }), /required child/);
+  assert.deepEqual([...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]), before);
+});
+
 test('group preserves document order and undo restores original parents and positions', () => {
   const doc = new SvgDocument();
   doc.add(new Group('left'));

@@ -43,9 +43,7 @@ export class SvgDocument {
         }
       };
       collectCurrent(this.rootShapes);
-      for (const group of groups) {
-        for (const child of [...group.children]) group.remove(child);
-      }
+      for (const group of groups) group.detachAllForRecovery();
       this.rootShapes.length = 0;
       const restore = (shapes: readonly Shape[], parent?: Group): void => {
         for (const shape of shapes) {

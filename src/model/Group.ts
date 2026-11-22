@@ -24,10 +24,19 @@ export class Group extends Shape {
   remove(child: Shape): number {
     const index = this.childShapes.indexOf(child);
     if (index < 0) throw new Error(`no such child: ${child.id}`);
+    this.assertChildRemovalAllowed(child);
     this.childShapes.splice(index, 1);
     child.setParent(null);
     return index;
   }
+
+  /** Recovery path used only when the document restores a failed structural edit. */
+  detachAllForRecovery(): void {
+    for (const child of this.childShapes) child.setParent(null);
+    this.childShapes.length = 0;
+  }
+
+  protected assertChildRemovalAllowed(_child: Shape): void {}
 
   private contains(target: Shape): boolean {
     for (const child of this.childShapes) {
