@@ -19,6 +19,18 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 
 `test/extensions.test.mjs` 覆盖四个扩展点、属性冲突与失败回滚、标记组的缺省读回，以及 Phase 1 会话逐字节回归。首次脚本化度量保存在 [metrics/commit-3.txt](./metrics/commit-3.txt)，可通过 `npm run metrics` 重现。
 
+### Commit 4：事务式插件装载
+
+`src/composition/PluginLoader.ts` 支持两种装配入口：`loadCode` 接收代码中选择的插件对象，`loadConfig` 按 JSON 文件中的路径顺序动态导入插件模块。两种入口最终都调用同一个 `loadOne` 流程，不存在两套注册规则。配置格式如下：
+
+```json
+{
+  "plugins": ["./plugins/example.js"]
+}
+```
+
+每个插件通过内核侧的 `PluginManifest` 声明 id、API 版本及四类贡献名称，并在 `activate` 中只访问临时 `ExtensionRegistrar`。组合层的 `StagedExtensions` 暂存实际贡献；加载器核对 manifest 后，`ExtensionRegistry.commit` 先检查全部名称，再一次提交。激活异常、manifest 不一致、重复名称、配置或模块读取失败都会产生失败结果，不会留下部分注册；加载列表中的后续插件仍继续处理。`test/plugin-loader.test.mjs` 覆盖代码装配、配置装配和上述失败回滚路径。
+
 ## 架构方案
 
 ### 模块划分

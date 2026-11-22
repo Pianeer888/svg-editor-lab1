@@ -42,6 +42,7 @@ test('tree decorators compose and an attribute handler remains one undo unit', a
       set: (shape, _attribute, value) => shape.set('fill', value),
     });
     extensions.registerTreeDecorator({
+      name: 'accent-label',
       decorate: shape => shape.fill === 'blue' ? '[accent]' : '',
     });
   });

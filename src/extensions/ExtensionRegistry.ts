@@ -3,12 +3,13 @@ import type { Command } from './Command.js';
 import type { ShapeProvider, SvgShapeInput } from './ShapeProvider.js';
 import type { TreeDecorator } from './TreeDecorator.js';
 import type { Shape } from '../model/Shape.js';
+import type { ExtensionContributions } from './Plugin.js';
 
 export class ExtensionRegistry {
   private readonly commandEntries = new Map<string, Command>();
   private readonly shapeEntries = new Map<string, ShapeProvider>();
-  private readonly decoratorEntries: TreeDecorator[] = [];
-  private readonly attributeEntries: AttributeHandler[] = [];
+  private readonly decoratorEntries = new Map<string, TreeDecorator>();
+  private readonly attributeEntries = new Map<string, AttributeHandler>();
 
   registerCommand(command: Command): void {
     if (this.commandEntries.has(command.name)) throw new Error(`command already registered: ${command.name}`);
@@ -48,11 +49,36 @@ export class ExtensionRegistry {
     return matches[0]!.toSvg(shape);
   }
 
-  registerTreeDecorator(decorator: TreeDecorator): void { this.decoratorEntries.push(decorator); }
-  treeDecorators(): readonly TreeDecorator[] { return [...this.decoratorEntries]; }
+  registerTreeDecorator(decorator: TreeDecorator): void {
+    if (this.decoratorEntries.has(decorator.name)) throw new Error(`tree decorator already registered: ${decorator.name}`);
+    this.decoratorEntries.set(decorator.name, decorator);
+  }
+  treeDecorators(): readonly TreeDecorator[] { return [...this.decoratorEntries.values()]; }
 
-  registerAttributeHandler(handler: AttributeHandler): void { this.attributeEntries.push(handler); }
+  registerAttributeHandler(handler: AttributeHandler): void {
+    if (this.attributeEntries.has(handler.name)) throw new Error(`attribute handler already registered: ${handler.name}`);
+    this.attributeEntries.set(handler.name, handler);
+  }
   attributeHandlers(shape: Shape, attribute: string): readonly AttributeHandler[] {
-    return this.attributeEntries.filter(handler => handler.supports(shape, attribute));
+    return [...this.attributeEntries.values()].filter(handler => handler.supports(shape, attribute));
+  }
+
+  commit(contributions: ExtensionContributions): void {
+    this.checkNames(this.shapeEntries, contributions.shapes.map(provider => provider.type), 'shape provider');
+    this.checkNames(this.commandEntries, contributions.commands.map(command => command.name), 'command');
+    this.checkNames(this.decoratorEntries, contributions.treeDecorators.map(decorator => decorator.name), 'tree decorator');
+    this.checkNames(this.attributeEntries, contributions.attributeHandlers.map(handler => handler.name), 'attribute handler');
+    for (const provider of contributions.shapes) this.shapeEntries.set(provider.type, provider);
+    for (const command of contributions.commands) this.commandEntries.set(command.name, command);
+    for (const decorator of contributions.treeDecorators) this.decoratorEntries.set(decorator.name, decorator);
+    for (const handler of contributions.attributeHandlers) this.attributeEntries.set(handler.name, handler);
+  }
+
+  private checkNames<T>(current: ReadonlyMap<string, T>, incoming: readonly string[], kind: string): void {
+    const names = new Set(current.keys());
+    for (const name of incoming) {
+      if (names.has(name)) throw new Error(`${kind} already registered: ${name}`);
+      names.add(name);
+    }
   }
 }
