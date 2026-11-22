@@ -1,0 +1,6 @@
+{
+  "plugins": [
+    { "module": "./dist/plugins/stats/index.js" },
+    { "module": "./dist/plugins/dir/index.js" }
+  ]
+}

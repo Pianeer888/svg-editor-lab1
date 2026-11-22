@@ -10,7 +10,13 @@ npm ci
 npm run cli
 ```
 
-当前已支持 `init`、`read`、`save`、`canvas`、六种图形的 `create`（含 `in <容器 id>`）、`delete`、`move`、`scale`、`set`、`group`、`ungroup`、`addto`、`front`、`back`、`undo`、`redo`、`tree`、`show`、`help`。输入 `#` 开头的注释行会被忽略；按 `Ctrl+D` 结束程序。
+当前默认装配支持 `init`、`read`、`save`、`canvas`、六种图形的 `create`（含 `in <容器 id>`）、`delete`、`move`、`scale`、`set`、`group`、`ungroup`、`addto`、`front`、`back`、`undo`、`redo`、`tree`、`show`、`help`，并加载 `stats` 与 `dir` 命令插件。输入 `#` 开头的注释行会被忽略；按 `Ctrl+D` 结束程序。
+
+默认使用代码装配。使用配置装配时运行：
+
+```bash
+npm run cli -- --config plugins.config.json
+```
 
 例如输入 `init 400 200`、`create rect r1 10 20 100 50 red`、`save demo.svg`，随后可在浏览器打开 `demo.svg`。`read demo.svg` 会重新载入文件；若文件中的图形缺少 id，会打印 `warning:`。`save` 不带路径时使用上次成功读取或保存的路径；`init` 后第一次保存需要显式给出路径。
 

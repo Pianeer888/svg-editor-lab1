@@ -72,7 +72,7 @@ test('registry collision makes the whole plugin commit atomic', () => {
     }),
   ]);
   assert.deepEqual(results.map(result => result.status), ['loaded', 'failed']);
-  assert.match(results[1].error, /command already registered: same/);
+  assert.match(results[1].error, /duplicate registration: commands\/same/);
   assert.throws(() => extensions.createShape('ghost', 'x', []), /unknown shape type/);
 });
 
@@ -88,7 +88,7 @@ test('invalid manifest and duplicate plugin id fail without replacing the loaded
   assert.deepEqual(results.map(result => result.status), ['failed', 'failed', 'loaded', 'failed']);
   assert.match(results[0].error, /invalid plugin id/);
   assert.match(results[1].error, /unsupported plugin API version/);
-  assert.match(results[3].error, /plugin already loaded/);
+  assert.match(results[3].error, /duplicate registration: plugins\/sample.unique/);
   assert.ok(extensions.command('original'));
   assert.equal(extensions.command('replacement'), undefined);
 });
@@ -97,19 +97,28 @@ test('configuration composition reports import failure and loads later modules',
   const directory = mkdtempSync(join(tmpdir(), 'svg-plugins-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const configPath = join(directory, 'plugins.json');
-  writeFileSync(configPath, JSON.stringify({ plugins: ['./missing.mjs', './configured.mjs'] }));
+  writeFileSync(configPath, JSON.stringify({
+    plugins: [
+      { module: './disabled.mjs', enabled: false },
+      { module: './missing.mjs' },
+      { module: './no-default.mjs' },
+      { module: './configured.mjs', options: { command: 'configured' } },
+    ],
+  }));
+  writeFileSync(join(directory, 'no-default.mjs'), 'export const value = 1;');
   writeFileSync(join(directory, 'configured.mjs'), `
-    export default {
-      manifest: { id: 'sample.configured', apiVersion: 1, contributes: { commands: ['configured'] } },
+    export default options => ({
+      manifest: { id: 'sample.configured', apiVersion: 1, contributes: { commands: [options.command] } },
       activate(registrar) {
-        registrar.registerCommand({ name: 'configured', usage: 'configured', help: 'configured', execute() {} });
+        registrar.registerCommand({ name: options.command, usage: options.command, help: options.command, execute() {} });
       }
-    };
+    });
   `);
   const extensions = createDefaultExtensions();
   const results = await new PluginLoader(extensions).loadConfig(configPath);
-  assert.deepEqual(results.map(result => result.status), ['failed', 'loaded']);
-  assert.match(results[0].error, /Cannot find module|ERR_MODULE_NOT_FOUND/);
+  assert.deepEqual(results.map(result => result.status), ['failed', 'failed', 'loaded']);
+  assert.equal(results[0].error, 'plugin not found: ./missing.mjs');
+  assert.equal(results[1].error, 'plugin has no default export: ./no-default.mjs');
   assert.ok(extensions.command('configured'));
 });
 
@@ -122,6 +131,6 @@ test('invalid configuration returns a failure without changing the registry', as
   const results = await new PluginLoader(extensions).loadConfig(configPath);
   assert.equal(results.length, 1);
   assert.equal(results[0].status, 'failed');
-  assert.match(results[0].error, /plugins array/);
+  assert.equal(results[0].error, 'invalid plugin config');
   assert.deepEqual(extensions.commands(), []);
 });

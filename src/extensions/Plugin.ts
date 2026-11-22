@@ -8,8 +8,8 @@ export const PLUGIN_API_VERSION = 1 as const;
 export type PluginContributions = {
   readonly shapes?: readonly string[];
   readonly commands?: readonly string[];
-  readonly treeDecorators?: readonly string[];
-  readonly attributeHandlers?: readonly string[];
+  readonly decorators?: readonly string[];
+  readonly attributes?: readonly string[];
 };
 
 export type ExtensionContributions = {
@@ -36,3 +36,5 @@ export interface Plugin {
   readonly manifest: PluginManifest;
   activate(registrar: ExtensionRegistrar): void;
 }
+
+export type PluginFactory = (options: unknown) => Plugin;

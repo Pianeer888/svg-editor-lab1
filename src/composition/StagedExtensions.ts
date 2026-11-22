@@ -11,19 +11,19 @@ export class StagedExtensions implements ExtensionRegistrar {
   private readonly handlers = new Map<string, AttributeHandler>();
 
   registerShape(provider: ShapeProvider): void {
-    this.add(this.shapes, provider.type, provider, 'shape provider');
+    this.add(this.shapes, provider.type, provider, 'shapes');
   }
 
   registerCommand(command: Command): void {
-    this.add(this.commands, command.name, command, 'command');
+    this.add(this.commands, command.name, command, 'commands');
   }
 
   registerTreeDecorator(decorator: TreeDecorator): void {
-    this.add(this.decorators, decorator.name, decorator, 'tree decorator');
+    this.add(this.decorators, decorator.name, decorator, 'decorators');
   }
 
   registerAttributeHandler(handler: AttributeHandler): void {
-    this.add(this.handlers, handler.name, handler, 'attribute handler');
+    this.add(this.handlers, handler.name, handler, 'attributes');
   }
 
   contributions(): ExtensionContributions {
@@ -33,16 +33,16 @@ export class StagedExtensions implements ExtensionRegistrar {
     };
   }
 
-  names(): Record<keyof ExtensionContributions, readonly string[]> {
+  names(): Record<'shapes' | 'commands' | 'decorators' | 'attributes', readonly string[]> {
     return {
       shapes: [...this.shapes.keys()], commands: [...this.commands.keys()],
-      treeDecorators: [...this.decorators.keys()], attributeHandlers: [...this.handlers.keys()],
+      decorators: [...this.decorators.keys()], attributes: [...this.handlers.keys()],
     };
   }
 
-  private add<T>(entries: Map<string, T>, name: string, value: T, kind: string): void {
-    if (!name.trim()) throw new Error(`${kind} name must not be empty`);
-    if (entries.has(name)) throw new Error(`${kind} registered twice by plugin: ${name}`);
+  private add<T>(entries: Map<string, T>, name: string, value: T, category: string): void {
+    if (!name.trim()) throw new Error(`${category} name must not be empty`);
+    if (entries.has(name)) throw new Error(`duplicate registration: ${category}/${name}`);
     entries.set(name, value);
   }
 }

@@ -25,11 +25,30 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 
 ```json
 {
-  "plugins": ["./plugins/example.js"]
+  "plugins": [
+    { "module": "./dist/plugins/example.js", "options": {}, "enabled": true }
+  ]
 }
 ```
 
-每个插件通过内核侧的 `PluginManifest` 声明 id、API 版本及四类贡献名称，并在 `activate` 中只访问临时 `ExtensionRegistrar`。组合层的 `StagedExtensions` 暂存实际贡献；加载器核对 manifest 后，`ExtensionRegistry.commit` 先检查全部名称，再一次提交。激活异常、manifest 不一致、重复名称、配置或模块读取失败都会产生失败结果，不会留下部分注册；加载列表中的后续插件仍继续处理。`test/plugin-loader.test.mjs` 覆盖代码装配、配置装配和上述失败回滚路径。
+每个插件通过内核侧的 `PluginManifest` 声明 id、API 版本及 `shapes`、`commands`、`decorators`、`attributes` 四类贡献名称，并在 `activate` 中只访问临时 `ExtensionRegistrar`。组合层的 `StagedExtensions` 暂存实际贡献；加载器核对 manifest 后，`ExtensionRegistry.commit` 先检查全部名称，再一次提交。`enabled: false` 的条目直接跳过；若模块默认导出工厂函数，`options` 原样传给该工厂。激活异常、manifest 不一致、重复名称、配置或模块读取失败都会产生失败结果，不会留下部分注册；加载列表中的后续插件仍继续处理。`test/plugin-loader.test.mjs` 覆盖代码装配、配置装配和上述失败回滚路径。
+
+### Commit 5：`stats` 与 `dir` 命令插件
+
+`src/plugins/stats` 和 `src/plugins/dir` 是两个独立插件包，只通过 `Command` 与 `ExtensionRegistrar` 接入。各自的 `package.json` 用 `contributes.commands` 声明命令，测试会核对它与运行时 manifest 一致。默认代码装配在 `main.ts` 选择两个插件；使用 `--config plugins.config.json` 时，配置加载器导入相同的默认工厂，命令实现不变。禁用对应插件后，注册表中没有该命令，执行时返回 `unknown command`。
+
+`StatsCommand` 深度优先读取当前图形树。`Group` 子类只计入 containers，其他节点按首次出现的类型顺序计数；命令不调用 `executeEdit`，不会进入撤销历史。
+
+`dir` 的 Adapter 角色对应如下：
+
+| Adapter 角色 | 实现 | 职责 |
+| --- | --- | --- |
+| Target | `DirectoryAccess` | 提供当前目录路径和直接子项，不暴露 Node `Dirent`。 |
+| Adapter | `NodeDirectoryAdapter` | 把 `process.cwd()` 与 `readdirSync` 转换成稳定的 `DirectoryEntry`。 |
+| Adaptee | Node `fs` 与进程工作目录 | 提供真实目录信息。 |
+| Client | `DirCommand` | 只依赖 Target，负责分组、排序和输出。 |
+
+目录、普通文件和其他类型分别显示为 `[DIR]`、`[FILE]`、`[OTHER]`；符号链接不遍历目标，归入 `[OTHER]` 并排在普通文件之后。隐藏项照常显示。`test/command-plugins.test.mjs` 使用测试替身覆盖混合目录、空目录、读取失败和历史不变，并用临时目录验证真实 Adapter；同一固定目录下的代码装配与配置装配输出逐字节一致。会话输入保存在 [transcript/cli-plugins.txt](./transcript/cli-plugins.txt)。
 
 ## 架构方案
 

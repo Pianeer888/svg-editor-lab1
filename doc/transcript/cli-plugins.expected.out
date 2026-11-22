@@ -1,0 +1,17 @@
+svg-editor 0.1 — type 'help' for commands
+svg> svg> canvas 100x100 created
+svg> g#flow created
+svg> rect#r1 created in g#flow
+svg> circle#c1 created in g#flow
+svg> text#t1 created in g#flow
+svg> rect: 1  circle: 1  text: 1  (total 3, containers 1)
+svg> [DIR]  docs
+[DIR]  plugins
+[FILE]  demo.svg
+[FILE]  package.json
+svg> undid: text#t1 created
+svg> svg (100x100)
+└── g#flow
+    ├── rect#r1  x=0 y=0 w=10 h=10
+    └── circle#c1  cx=20 cy=20 r=5
+svg>

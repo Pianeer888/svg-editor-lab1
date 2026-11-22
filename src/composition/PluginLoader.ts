@@ -1,8 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
-import { PLUGIN_API_VERSION, type Plugin, type PluginContributions, type PluginManifest } from '../extensions/Plugin.js';
+import {
+  PLUGIN_API_VERSION, type Plugin, type PluginContributions, type PluginFactory, type PluginManifest,
+} from '../extensions/Plugin.js';
 import { StagedExtensions } from './StagedExtensions.js';
 
 export type PluginLoadResult = {
@@ -11,6 +14,15 @@ export type PluginLoadResult = {
   readonly status: 'loaded' | 'failed';
   readonly error?: string;
 };
+
+type PluginConfigEntry = {
+  readonly module: string;
+  readonly options?: unknown;
+  readonly enabled?: boolean;
+};
+
+const contributionKinds = ['shapes', 'commands', 'decorators', 'attributes'] as const;
+type ContributionKind = typeof contributionKinds[number];
 
 export class PluginLoader {
   private readonly loadedIds = new Set<string>();
@@ -22,26 +34,47 @@ export class PluginLoader {
   }
 
   async loadConfig(path: string): Promise<PluginLoadResult[]> {
-    let entries: string[];
+    let entries: PluginConfigEntry[];
     try {
-      const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
-      entries = this.configEntries(parsed);
-    } catch (error) {
-      return [this.failed(path, error)];
+      entries = this.configEntries(JSON.parse(await readFile(path, 'utf8')) as unknown);
+    } catch {
+      return [this.failed(path, 'invalid plugin config')];
     }
 
     const results: PluginLoadResult[] = [];
     for (const entry of entries) {
-      const modulePath = resolve(dirname(path), entry);
-      try {
-        const loaded: unknown = await import(pathToFileURL(modulePath).href);
-        const plugin = this.modulePlugin(loaded);
-        results.push(this.loadOne(plugin, entry));
-      } catch (error) {
-        results.push(this.failed(entry, error));
-      }
+      if (entry.enabled === false) continue;
+      results.push(await this.loadConfigured(entry, path));
     }
     return results;
+  }
+
+  private async loadConfigured(entry: PluginConfigEntry, configPath: string): Promise<PluginLoadResult> {
+    let moduleUrl: string;
+    try {
+      moduleUrl = await this.resolveModule(entry.module, configPath);
+    } catch {
+      return this.failed(entry.module, `plugin not found: ${entry.module}`);
+    }
+
+    let loaded: unknown;
+    try { loaded = await import(moduleUrl); }
+    catch (error) {
+      return this.failed(entry.module, `plugin failed to activate: ${entry.module} (${this.message(error)})`);
+    }
+    if (typeof loaded !== 'object' || loaded === null || !('default' in loaded)) {
+      return this.failed(entry.module, `plugin has no default export: ${entry.module}`);
+    }
+
+    try {
+      const exported = (loaded as { default: unknown }).default;
+      const candidate = typeof exported === 'function'
+        ? (exported as PluginFactory)(entry.options)
+        : this.withoutOptions(exported, entry);
+      return this.loadOne(candidate, entry.module);
+    } catch (error) {
+      return this.failed(entry.module, `plugin failed to activate: ${entry.module} (${this.message(error)})`);
+    }
   }
 
   private loadOne(candidate: unknown, source: string): PluginLoadResult {
@@ -50,16 +83,22 @@ export class PluginLoader {
       const plugin = this.plugin(candidate);
       const manifest = this.manifest(plugin.manifest);
       pluginId = manifest.id;
-      if (this.loadedIds.has(pluginId)) throw new Error(`plugin already loaded: ${pluginId}`);
+      if (this.loadedIds.has(pluginId)) throw new Error(`duplicate registration: plugins/${pluginId}`);
 
       const staged = new StagedExtensions();
-      plugin.activate(staged);
-      this.validateContributions(manifest.contributes, staged.names());
+      try { plugin.activate(staged); }
+      catch (error) { throw new Error(`plugin failed to activate: ${pluginId} (${this.message(error)})`); }
+      this.validateContributions(manifest, staged.names());
       this.extensions.commit(staged.contributions());
       this.loadedIds.add(pluginId);
       return { source, pluginId, status: 'loaded' };
     } catch (error) {
-      return this.failed(source, error, pluginId);
+      const message = this.duplicateMessage(this.message(error));
+      const formatted = message.startsWith('plugin manifest mismatch:') ||
+        message.startsWith('plugin failed to activate:') || message.startsWith('duplicate registration:')
+        ? message
+        : `plugin failed to activate: ${pluginId ?? source} (${message})`;
+      return this.failed(source, formatted, pluginId);
     }
   }
 
@@ -84,14 +123,16 @@ export class PluginLoader {
   }
 
   private validateContributions(
-    expected: PluginContributions,
-    actual: Record<'shapes' | 'commands' | 'treeDecorators' | 'attributeHandlers', readonly string[]>,
+    manifest: PluginManifest,
+    actual: Record<ContributionKind, readonly string[]>,
   ): void {
-    for (const kind of ['shapes', 'commands', 'treeDecorators', 'attributeHandlers'] as const) {
-      const declared = [...(expected[kind] ?? [])].sort();
+    for (const kind of contributionKinds) {
+      const declared = [...(manifest.contributes[kind] ?? [])].sort();
       const registered = [...actual[kind]].sort();
       if (declared.length !== registered.length || declared.some((name, index) => name !== registered[index])) {
-        throw new Error(`${kind} manifest mismatch: declared [${declared.join(', ')}], registered [${registered.join(', ')}]`);
+        const declaredText = this.contributionSummary(manifest.contributes);
+        const registeredText = this.contributionSummary(actual);
+        throw new Error(`plugin manifest mismatch: ${manifest.id} (declared: ${declaredText}, registered: ${registeredText})`);
       }
     }
   }
@@ -99,11 +140,10 @@ export class PluginLoader {
   private expectedNames(value: unknown): void {
     if (typeof value !== 'object' || value === null) throw new Error('plugin contributions required');
     const contributions = value as Record<string, unknown>;
-    const kinds = ['shapes', 'commands', 'treeDecorators', 'attributeHandlers'];
     for (const key of Object.keys(contributions)) {
-      if (!kinds.includes(key)) throw new Error(`unknown contribution category: ${key}`);
+      if (!(contributionKinds as readonly string[]).includes(key)) throw new Error(`unknown contribution category: ${key}`);
     }
-    for (const kind of kinds) {
+    for (const kind of contributionKinds) {
       const names = contributions[kind];
       if (names === undefined) continue;
       if (!Array.isArray(names) || names.some(name => typeof name !== 'string' || !name.trim())) {
@@ -113,28 +153,46 @@ export class PluginLoader {
     }
   }
 
-  private configEntries(value: unknown): string[] {
+  private configEntries(value: unknown): PluginConfigEntry[] {
     if (typeof value !== 'object' || value === null || !Array.isArray((value as { plugins?: unknown }).plugins)) {
-      throw new Error('config must contain a plugins array');
+      throw new Error('invalid config');
     }
-    const entries = (value as { plugins: unknown[] }).plugins;
-    if (entries.some(entry => typeof entry !== 'string' || !entry.trim())) {
-      throw new Error('plugin paths must be non-empty strings');
-    }
-    return entries as string[];
+    return (value as { plugins: unknown[] }).plugins.map(raw => {
+      if (typeof raw !== 'object' || raw === null) throw new Error('invalid entry');
+      const entry = raw as Partial<PluginConfigEntry>;
+      if (typeof entry.module !== 'string' || !entry.module.trim()) throw new Error('invalid module');
+      if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') throw new Error('invalid enabled');
+      return { module: entry.module, ...(entry.options === undefined ? {} : { options: entry.options }),
+        ...(entry.enabled === undefined ? {} : { enabled: entry.enabled }) };
+    });
   }
 
-  private modulePlugin(value: unknown): unknown {
-    if (typeof value !== 'object' || value === null || !('default' in value)) {
-      throw new Error('plugin module must have a default export');
-    }
-    return (value as { default: unknown }).default;
+  private async resolveModule(specifier: string, configPath: string): Promise<string> {
+    const requireFromConfig = createRequire(pathToFileURL(resolve(configPath)));
+    return pathToFileURL(requireFromConfig.resolve(specifier)).href;
   }
 
-  private failed(source: string, error: unknown, pluginId?: string): PluginLoadResult {
-    return {
-      source, ...(pluginId === undefined ? {} : { pluginId }), status: 'failed',
-      error: error instanceof Error ? error.message : String(error),
+  private withoutOptions(exported: unknown, entry: PluginConfigEntry): unknown {
+    if (entry.options !== undefined) throw new Error('plugin options require a default factory');
+    return exported;
+  }
+
+  private contributionSummary(contributions: PluginContributions | Record<ContributionKind, readonly string[]>): string {
+    return contributionKinds.map(kind => `${kind}=[${(contributions[kind] ?? []).join(', ')}]`).join('; ');
+  }
+
+  private message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+
+  private duplicateMessage(message: string): string {
+    const match = /^(shape provider|command|tree decorator|attribute handler) already registered: (.+)$/.exec(message);
+    if (!match) return message;
+    const categories: Record<string, string> = {
+      'shape provider': 'shapes', command: 'commands', 'tree decorator': 'decorators', 'attribute handler': 'attributes',
     };
+    return `duplicate registration: ${categories[match[1]!]}/${match[2]}`;
+  }
+
+  private failed(source: string, error: string, pluginId?: string): PluginLoadResult {
+    return { source, ...(pluginId === undefined ? {} : { pluginId }), status: 'failed', error };
   }
 }

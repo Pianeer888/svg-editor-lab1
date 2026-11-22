@@ -1,0 +1,10 @@
+# Run with stats and dir enabled from test/fixtures/dir.
+init 100 100
+create g flow
+create rect r1 0 0 10 10 in flow
+create circle c1 20 20 5 in flow
+create text t1 5 50 "hello" in flow
+stats
+dir
+undo
+tree
