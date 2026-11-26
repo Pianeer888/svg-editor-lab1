@@ -50,6 +50,19 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 
 目录、普通文件和其他类型分别显示为 `[DIR]`、`[FILE]`、`[OTHER]`；符号链接不遍历目标，归入 `[OTHER]` 并排在普通文件之后。隐藏项照常显示。`test/command-plugins.test.mjs` 使用测试替身覆盖混合目录、空目录、读取失败和历史不变，并用临时目录验证真实 Adapter；同一固定目录下的代码装配与配置装配输出逐字节一致。会话输入保存在 [transcript/cli-plugins.txt](./transcript/cli-plugins.txt)。
 
+### Commit 7：配置装配接入 box
+
+`demo/box-config` 与代码装配提交 `68b3ca0` 共用基线 `8e3646c`。本分支使用同一份 `src/plugins/box`，在 `plugins.config.json` 的 `dir` 条目之后加入 box 模块路径。运行源码的差异集中在新增插件目录。测试通过实际 CLI 入口读取配置、回放版本 B 会话并检查保存后的 SVG。两种装配共用 [cli-box.txt](./transcript/cli-box.txt)。
+
+```bash
+npm run build
+node dist/main.js --config plugins.config.json
+```
+
+检查本分支已有运行源码的差异可用 `git diff 8e3646c HEAD -- src ':(exclude)src/plugins/box'`，预期为空。检查两种装配的插件源码可用 `git diff 68b3ca0 HEAD -- src/plugins/box`，预期为空。
+
+分别构建两种装配，在同一临时工作目录重放 `cli-1.txt`、`cli-box.txt` 和 `cli-plugins.txt`。三组标准输出逐字节相同，前两组生成的 SVG 也相同。每次重放前恢复初始文件；包含 `dir` 的会话使用固定目录内容。配置设为空插件列表时，`cli-1.txt` 的标准输出和生成的 SVG 都与 `final` 一致。
+
 ## 架构方案
 
 ### 模块划分
