@@ -50,6 +50,14 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 
 目录、普通文件和其他类型分别显示为 `[DIR]`、`[FILE]`、`[OTHER]`；符号链接不遍历目标，归入 `[OTHER]` 并排在普通文件之后。隐藏项照常显示。`test/command-plugins.test.mjs` 使用测试替身覆盖混合目录、空目录、读取失败和历史不变，并用临时目录验证真实 Adapter；同一固定目录下的代码装配与配置装配输出逐字节一致。会话输入保存在 [transcript/cli-plugins.txt](./transcript/cli-plugins.txt)。
 
+### Commit 6：代码装配接入 box
+
+`Box` 复用 `Group` 的子树行为，通过保护钩子拒绝摘除必要的矩形与文字。`BoxProvider` 负责生成派生 id、默认蓝色框体和标题位置，并读写 `data-kind="box"`。`BoxAttributes` 将 `fill` 和 `label` 转发给对应子部件，每次设置仍由原有编辑命令负责撤销和重做。
+
+安装插件时，缺少必要子部件或类型错误会拒绝整次读取。未安装时，标记组按普通 `g` 读取并保留子图形。嵌套 box 的解组会被必要子部件保护拦截，根级容器沿用原有解组限制。当前使用通用 CLI 回显，结构树显示 `box#id`，末尾标签留到树标签提交。
+
+代码装配在 `main.ts` 选择插件。版本 B 的命令输入保存在 [cli-box.txt](./transcript/cli-box.txt)。
+
 ## 架构方案
 
 ### 模块划分
