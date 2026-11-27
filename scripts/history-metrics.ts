@@ -14,8 +14,8 @@ const scopes = ['内核', '装配处', '插件', 'VS Code 扩展'];
 const responsibilities: Readonly<Record<string, string | undefined>> = {
   application: '编辑会话、命令、历史或存储契约',
   cli: '命令行交互',
-  composition: '装载与暂存',
-  extensions: '扩展接口、内置能力或注册',
+  composition: '默认装配、插件装载或暂存',
+  extensions: '扩展接口或注册',
   infrastructure: 'SVG 编解码或文件存取',
   model: '文档与图形模型',
   'main.ts': '启动与依赖装配',
@@ -76,7 +76,7 @@ function totals(rows: FileMetrics[]) {
 const [oldRows, newRows] = [snapshot(before), snapshot(after)];
 print('# Phase 1 → Phase 2 源码度量\n');
 print('由 `scripts/history-metrics.ts` 生成。行数为非空物理行（含注释）。圈复杂度为 TypeScript AST 中有实现的函数入口与决策点之和，包含顶层决策。决策计入 if、循环、catch、三元、非 default 的 case 和短路运算。');
-print('\nCLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插件按 src/plugins 归类。内置图形和扩展契约计入内核。VS Code 扩展单列，依赖、测试、配置和构建产物排除。\n');
+print('\nCLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插件按 src/plugins 归类。图形模型和扩展契约计入内核，默认注册计入装配处。VS Code 扩展单列，依赖、测试、配置和构建产物排除。\n');
 print('| 范围 | Phase 1 文件 / 行 / 复杂度 | Phase 2 文件 / 行 / 复杂度 | 行数增量 | 复杂度增量 |');
 print('| --- | ---: | ---: | ---: | ---: |');
 for (const scope of [...scopes.slice(0, 3), 'CLI 合计', scopes[3]]) {

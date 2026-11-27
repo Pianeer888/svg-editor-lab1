@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createDefaultExtensions } from '../dist/extensions/DefaultExtensions.js';
+import { createDefaultExtensions } from '../dist/composition/DefaultExtensions.js';
 import { PluginLoader } from '../dist/composition/PluginLoader.js';
 import type { Command } from '../dist/extensions/Command.js';
 import type { Plugin, PluginContributions } from '../dist/extensions/Plugin.js';
@@ -154,6 +154,33 @@ test('invalid configuration returns a failure without changing the registry', as
   assert.equal(results[0].status, 'failed');
   assert.equal(results[0].error, 'invalid plugin config');
   assert.deepEqual(extensions.commands(), []);
+});
+
+test('configuration resolves a package with an import-only entry from the config directory', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'svg-esm-plugin-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const packageName = 'example-import-only';
+  const packageDir = join(directory, 'node_modules', packageName);
+  mkdirSync(packageDir, { recursive: true });
+  writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+    name: packageName, exports: { import: './index.mjs' }, contributes: { commands: ['external'] },
+  }));
+  writeFileSync(join(packageDir, 'index.mjs'), `
+    import { external } from './command.mjs';
+    export default {
+      manifest: { id: '${packageName}', apiVersion: 1, contributes: { commands: [external.name] } },
+      activate(registrar) { registrar.registerCommand(external); },
+    };
+  `);
+  writeFileSync(join(packageDir, 'command.mjs'),
+    "export const external = { name: 'external', usage: 'external', help: 'external', execute() {} };");
+  const config = join(directory, 'plugins.json');
+  writeFileSync(config, JSON.stringify({ plugins: [{ module: packageName }] }));
+
+  const extensions = createDefaultExtensions();
+  const results = await new PluginLoader(extensions).loadConfig(config);
+  assert.deepEqual(results, [{ source: packageName, pluginId: packageName, status: 'loaded' }]);
+  assert.ok(extensions.command('external'));
 });
 
 test('configured package declarations are checked before staged contributions take effect', async t => {

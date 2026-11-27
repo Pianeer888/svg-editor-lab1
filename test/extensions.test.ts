@@ -5,7 +5,7 @@ import { Readable, Writable } from 'node:stream';
 import { Cli } from '../dist/cli/Cli.js';
 import type { DocumentStore } from '../dist/application/DocumentStore.js';
 import type { ExtensionRegistry } from '../dist/extensions/ExtensionRegistry.js';
-import { createDefaultExtensions } from '../dist/extensions/DefaultExtensions.js';
+import { createDefaultExtensions } from '../dist/composition/DefaultExtensions.js';
 import { SvgCodec } from '../dist/infrastructure/SvgCodec.js';
 import { SvgFileStore } from '../dist/infrastructure/SvgFileStore.js';
 import { Shape } from '../dist/model/Shape.js';
@@ -115,7 +115,7 @@ test('a registered shape provider owns creation and SVG conversion', () => {
 test('marked groups fall back to ordinary groups when no optional provider is loaded', () => {
   const xml = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">' +
     '<g id="b" data-kind="box"><rect id="r" x="0" y="0" width="1" height="1"/></g></svg>';
-  const { document } = SvgCodec.parse(xml);
+  const { document } = SvgCodec.parse(xml, createDefaultExtensions());
   assert.deepEqual([...document.walk()].map(shape => `${shape.type}#${shape.id}`), ['g#b', 'rect#r']);
 });
 
@@ -123,11 +123,11 @@ test('default extensions preserve the Phase 1 transcript byte for byte', async (
   const input = readFileSync(new URL('../doc/transcript/cli-1.txt', import.meta.url), 'utf8');
   const expected = readFileSync(new URL('../doc/transcript/cli-1.final.out', import.meta.url), 'utf8');
   const imported = readFileSync(new URL('../doc/transcript/other.svg', import.meta.url), 'utf8');
+  const extensions = createDefaultExtensions();
   const store: DocumentStore = {
-    load(path) { assert.equal(path, 'other.svg'); return SvgCodec.parse(imported); },
+    load(path) { assert.equal(path, 'other.svg'); return SvgCodec.parse(imported, extensions); },
     save(path) { assert.equal(path, 'demo.svg'); },
   };
-  const extensions = createDefaultExtensions();
   let output = '';
   const sink = new Writable({ write(chunk, _encoding, callback) { output += chunk.toString(); callback(); } });
   async function* pacedInput() {

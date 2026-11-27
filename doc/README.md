@@ -1,102 +1,15 @@
-# SVG 编辑器：设计与过程记录
+# SVG 编辑器设计与交付记录
 
-Phase 2 的实施计划见 [phase2-plan.md](./phase2-plan.md)；VS Code 扩展的启动与设计分析见 [vscode-extension/README.md](../vscode-extension/README.md)。
+- [Phase 1](#phase-1) · [架构方案](#架构方案) · [过程记录](#过程记录) · [一致性自查](#一致性自查) · [验证](#质量保证手段)
+- [Phase 2](#phase-2) · [交付物索引](#交付物索引) · [扩展点清单](#扩展点清单) · [测试与验收证据](#测试与验收证据) · [AI 协作与核查](#phase-2-ai-协作与核查)
 
-> 本文保留第一轮的设计假设，并记录每轮实现与最终核查。初版架构图用于对照演化过程；实际依赖见文末“一致性自查”。
+## Phase 1
 
-## Phase 2：扩展框架基线
+本节对应 `final` 标签的 CLI 交付，保留初版架构、实现过程和最终核查。
 
-Commit 3 将变化点从条件分派改为显式注册，四个契约及调用位置如下。
+### 架构方案
 
-| 扩展点与职责 | 现有实现 | 注册与调用位置 | 缺省行为与错误 |
-| --- | --- | --- | --- |
-| `ShapeProvider` 创建、读回和写出图形 | `BuiltInShapeProvider`、`BoxProvider` | `ExtensionRegistry.ts` 的 `registerShape`、`ShapeFactory.ts` 的 `create` 和 `fromSvg`、`SvgCodec.ts` 的 `writeShape` | 启用六种内置图形。未知类型、重复提供者或写出冲突会报错。 |
-| `Command` 增加终端命令及帮助 | `Cli` 注册的内置命令、`StatsCommand`、`DirCommand` | `ExtensionRegistry.ts` 的 `registerCommand`、`Cli.ts` 的 `execute` | 内置命令继续分发。未注册的名称报 `unknown command`，重复注册报错。 |
-| `TreeDecorator` 为树的图形行追加标签 | `ModifiedStar`、`BoxTypeLabel` | `ExtensionRegistry.ts` 的 `registerTreeDecorator`、`Cli.ts` 的 `suffix` | 没有标签时保留原输出。标签按注册顺序拼接，重名时拒绝注册。 |
-| `AttributeHandler` 定义特定图形的属性行为 | `BoxAttributes` | `ExtensionRegistry.ts` 的 `registerAttributeHandler`、`Cli.ts` 的 `set` | 无匹配时调用 `Shape.set`，一个匹配时作为单个 undo 单元，多个匹配时拒绝修改。 |
-
-`src/extensions/DefaultExtensions.ts` 是当前组合入口，`main.ts` 把同一个注册表实例交给 CLI 与文件存储。内置图形由 `BuiltInShapeProvider` 注册；SVG 编解码不再包含图形类型分支。读回时先为 XML 子树分配 id，再由提供者构造完整图形子树，最后交给文档一次检查全部 id。属性处理器失败时由 `ShapeEditCommand` 恢复修改前状态，失败操作不进入历史。带 `data-kind` 的 `<g>` 在没有专用提供者时按普通组读入，保留可表达的子图形。
-
-`test/extensions.test.ts` 覆盖四个扩展点、属性冲突与失败回滚、标记组的缺省读回，以及 Phase 1 会话逐字节回归。首次脚本化度量保存在 [metrics/commit-3.txt](./metrics/commit-3.txt)，可通过 `npm run metrics` 重现。
-
-### Commit 4：事务式插件装载
-
-`src/composition/PluginLoader.ts` 支持两种装配入口：`loadCode` 接收代码中选择的插件对象，`loadConfig` 按 JSON 文件中的路径顺序动态导入插件模块。两种入口最终都调用同一个 `loadOne` 流程，不存在两套注册规则。配置格式如下：
-
-```json
-{
-  "plugins": [
-    { "module": "./dist/plugins/example.js", "options": {}, "enabled": true }
-  ]
-}
-```
-
-每个插件通过内核侧的 `PluginManifest` 声明 id、API 版本及 `shapes`、`commands`、`decorators`、`attributes` 四类贡献名称，并在 `activate` 中只访问临时 `ExtensionRegistrar`。组合层的 `StagedExtensions` 暂存实际贡献；加载器核对 manifest 后，`ExtensionRegistry.commit` 先检查全部名称，再一次提交。`enabled: false` 的条目直接跳过；若模块默认导出工厂函数，`options` 原样传给该工厂。激活异常、manifest 不一致、重复名称、配置或模块读取失败都会产生失败结果，不会留下部分注册；加载列表中的后续插件仍继续处理。`test/plugin-loader.test.ts` 覆盖代码装配、配置装配和上述失败回滚路径。
-
-### Commit 5：`stats` 与 `dir` 命令插件
-
-`src/plugins/stats` 和 `src/plugins/dir` 是两个独立插件包，只通过 `Command` 与 `ExtensionRegistrar` 接入。各自的 `package.json` 用 `contributes.commands` 声明命令，测试会核对它与运行时 manifest 一致。默认代码装配在 `main.ts` 选择两个插件；使用 `--config plugins.config.json` 时，配置加载器导入相同的默认工厂，命令实现不变。禁用对应插件后，注册表中没有该命令，执行时返回 `unknown command`。
-
-`StatsCommand` 深度优先读取当前图形树。`Group` 子类只计入 containers，其他节点按首次出现的类型顺序计数；命令不调用 `executeEdit`，不会进入撤销历史。
-
-`dir` 的 Adapter 角色对应如下：
-
-| Adapter 角色 | 实现 | 职责 |
-| --- | --- | --- |
-| Target | `DirectoryAccess` | 提供当前目录路径和直接子项，不暴露 Node `Dirent`。 |
-| Adapter | `NodeDirectoryAdapter` | 把 `process.cwd()` 与 `readdirSync` 转换成稳定的 `DirectoryEntry`。 |
-| Adaptee | Node `fs` 与进程工作目录 | 提供真实目录信息。 |
-| Client | `DirCommand` | 只依赖 Target，负责分组、排序和输出。 |
-
-目录、普通文件和其他类型分别显示为 `[DIR]`、`[FILE]`、`[OTHER]`；符号链接不遍历目标，归入 `[OTHER]` 并排在普通文件之后。隐藏项照常显示。`test/command-plugins.test.ts` 使用测试替身覆盖混合目录、空目录、读取失败和历史不变，并用临时目录验证真实 Adapter；同一固定目录下的代码装配与配置装配输出逐字节一致。会话输入保存在 [transcript/cli-plugins.txt](./transcript/cli-plugins.txt)。
-
-### Commit 6：代码装配接入 box
-
-`Box` 复用 `Group` 的子树行为，通过保护钩子拒绝摘除必要的矩形与文字。`BoxProvider` 负责生成派生 id、默认蓝色框体和标题位置，并读写 `data-kind="box"`。`BoxAttributes` 将 `fill` 和 `label` 转发给对应子部件，每次设置仍由原有编辑命令负责撤销和重做。
-
-安装插件时，缺少必要子部件或类型错误会拒绝整次读取。未安装时，标记组按普通 `g` 读取并保留子图形。嵌套 box 的解组会被必要子部件保护拦截，根级容器沿用原有解组限制。当前使用通用 CLI 回显，结构树显示 `box#id`，末尾标签留到树标签提交。
-
-代码装配在 `main.ts` 选择插件。版本 B 的命令输入保存在 [cli-box.txt](./transcript/cli-box.txt)。
-
-### Commit 8：组合树标签
-
-`BoxTypeLabel` 和 `ModifiedStar` 分别注册到 `TreeDecorator`。组合根通过 `SavePointStore` 将成功读写通知交给启用的星号标签。相同的配置项可在 `plugins.config.json` 中独立启用，标签按注册顺序追加。保存点语义及传播规则见 [ADR](./adr/dirty-tree-label.md)。
-
-### Commit 9：架构对比与验收
-
-Phase 1 在 `Cli.execute` 和图形工厂集中选择内置行为。Phase 2 将命令、图形、树标签及属性行为交给注册表，组合根选择插件，SVG 读写通过提供者完成。编辑命令和 Composite 图形树仍负责原有的撤销与结构约束。
-
-| 架构阶段 | PlantUML 成品 |
-| --- | --- |
-| Phase 1 交付时的实际依赖 | [Phase 1 依赖图](./最终代码的实际依赖.svg)，源代码见本文“一致性自查” |
-| Phase 2 的装配、内核与扩展关系 | [Phase 2 依赖图](./architecture-phase2.svg) · [PlantUML 源码](./architecture-phase2.puml) |
-
-ADR 记录了 [属性处理](./adr/attribute-handlers.md)、[box 读回](./adr/box-readback.md)、[树标签的保存点语义](./adr/dirty-tree-label.md) 和 [事务注册](./adr/plugin-loading.md)。[度量报告](../docs/metrics/phase2.md) 包含分层文件清单、行数和圈复杂度增量。打完标签后执行 `npm run metrics:history -- final p2` 可从两个 Git 快照重新生成。
-
-#### 装配差异
-
-- `68b3ca0` 在 `main.ts` 选择 box。差异由新增插件、组合根、测试、命令会话和设计说明组成。
-- `ce12e07` 在 `demo/box-config` 通过配置选择同一个插件。差异由新增插件、配置、测试、命令会话和说明组成。两次接入共用 `8e3646c`，box 源码相同。
-
-```bash
-git diff --name-status 8e3646c 68b3ca0
-git diff --name-status 8e3646c ce12e07
-git diff --exit-code 8e3646c 68b3ca0 -- src ':(exclude)src/main.ts' ':(exclude)src/plugins/box'
-git diff --exit-code 8e3646c ce12e07 -- src ':(exclude)src/plugins/box'
-git diff --exit-code 68b3ca0 ce12e07 -- src/plugins/box
-```
-
-#### 自动验收
-
-`npm test` 覆盖图形、文件 IO、属性冲突和回滚、插件装载失败与重复注册、真实目录和目录替身、标签状态、VS Code 大纲和文件装饰。`npm run verify:phase2` 回放基础、box、stats/dir 三个命令会话，比较代码和配置装配的标准输出及生成的 SVG。每组使用相同的运行目录和初始文件，目录输出不会包含验收日志。脚本还从 Git 的 `final` 构建旧版，逐字节比较禁用可选插件时的基础会话。输入位于 `doc/transcript/`，输出及 SVG 预期值独立保存在 [验收快照](./transcript/phase2.expected.json)。
-
-#### 编辑会话职责
-
-当前文档、默认保存路径和编辑历史集中在应用层的 `EditorSession`。CLI 解析请求并打印结果，会话只在相应操作成功后更新状态和历史。现行 Phase 2 组件图中的包对应源码职责。失败读写、路径保留和历史屏障见 [会话测试](../test/editor-session.test.ts) 与 [设计决定](./adr/editor-session.md)。
-
-## Phase 1 架构方案
-
-### 模块划分
+#### 模块划分
 
 | 目录 | 职责 |
 | --- | --- |
@@ -106,7 +19,7 @@ git diff --exit-code 68b3ca0 ce12e07 -- src/plugins/box
 | `src/infrastructure/` | SVG/XML 与模型的双向转换、文件读写；实现应用层定义的存取接口。 |
 | `src/main.ts` | 创建并连接上述对象，启动 CLI。 |
 
-下面是初版**设计目标**的组件图：框内标出每层的关键职责和接口，箭头表示预期依赖方向。**这不是最终实现图**；实际依赖图见“一致性自查”。题目要求组件图或包图，因此这里按职责成组表达，不逐个罗列全部具体图形类和命令类。
+下面是初版**设计目标**的组件图：框内标出每层的关键职责和接口，箭头表示预期依赖方向。实际依赖图见[一致性自查](#一致性自查)。题目要求组件图或包图，因此这里按职责成组表达，不逐个罗列全部具体图形类和命令类。
 
 ![初版设计目标的 PlantUML 组件图](./初版设计目标.svg)
 
@@ -146,21 +59,21 @@ CODEC --> MODEL : 转换
 @enduml
 ```
 
-### 设计模式的选择
+#### 设计模式的选择
 
 - **Command（题目要求）**：每个成功的图形编辑操作是一个命令对象，负责执行并保存撤销所需的信息；执行器维护 undo/redo 栈。一条命令对应一个撤销单元，失败命令不入栈。删除、分组和层级调整需要保存原父容器与原位置，不能只保存图形 id。
 - 其中 `Cli` 把输入转换为命令请求，`CommandHistory` 是执行与历史管理者，各个 `EditCommand` 是命令对象，`Shape` / `SvgDocument` 是实际执行业务行为的接收者。`move`、`scale`、`set` 共用 `ShapeEditCommand`：回调选择接收者的方法，命令对象统一保存编辑前状态并负责撤销。这样保留了 Command 的执行与撤销边界，同时避免为三个相同生命周期的动作重复建类。
 - **Composite 语义**：叶子图形与 `<g>` 容器共享图形抽象。容器把移动、缩放等操作应用到子孙；调用方不按图形类型重复写分支。模型的公开行为由对象自身负责，避免公共数据袋。
 - 本阶段暂不建立通用插件框架。题目中的 `box` 是后续阶段目标，Phase 1 的内置类型只有 `rect`、`circle`、`ellipse`、`line`、`text`、`g`。
 
-### 依赖方向规则
+#### 依赖方向规则
 
 1. `model` 不依赖 CLI、文件系统或应用层；图形行为可以脱离终端测试。
 2. `application` 依赖 `model`，通过自己定义的存取接口访问 SVG 文件；不直接依赖具体 XML 库或 Node 文件 API。
 3. `cli` 依赖 `application`；`infrastructure` 实现应用层接口并依赖 `model`；只有 `main.ts` 负责装配具体实现。
 4. 按名称选择实现只出现在命令分发和图形工厂两处。这两处先集中管理并标为后续重构点，不让 `switch(tag)` 扩散到编辑操作中。
 
-### 变化点假设
+#### 变化点假设
 
 | 可能的变化 | 本阶段的处理 |
 | --- | --- |
@@ -169,71 +82,71 @@ CODEC --> MODEL : 转换
 | 图形组织方式变化 | 以容器树表达层级，按 id 定位由文档统一负责；不把层级路径写进命令参数。 |
 | SVG 读写细节变化 | 限制在 `infrastructure`，模型不直接处理 XML 或文件路径。 |
 
-## 过程记录
+### 过程记录
 
-### 迭代 1：先明确边界
+#### 迭代 1：先明确边界
 
 - 根据题目和课程课件，先将 CLI、命令执行、图形模型、SVG 读写分开，并确定 Command 与 Composite 的落点。
 - 选择保存每条命令需要的旧值、原父容器和原位置，以支持精确撤销；暂不为后续 `box` 实现插件框架，避免在需求明确前增加复杂度。
 - 此时尚未编写功能代码，以上为待验证的设计假设。后续提交会记录发现的问题和修订。
 
-### 迭代 2：建立可运行的 CLI 骨架
+#### 迭代 2：建立可运行的 CLI 骨架
 
 - 建立 TypeScript 编译配置、项目脚本和 CLI 入口。CLI 目前只负责逐行读取、显示提示符、忽略空行与注释；图形模型和命令执行尚未开始实现。
 - 输入输出通过构造参数传给 `Cli`，后续可以在不启动真实终端的情况下检查命令行为。此时不提前加入 XML 或插件依赖。
 - 已运行 `npm run check`、`npm run build`，并用多行输入验证入口可启动、注释可忽略。尚未实现的命令会明确报错，不将骨架当作完成功能。
 
-### 迭代 3：建立图形模型
+#### 迭代 3：建立图形模型
 
 - 新增六种内置图形、共同的 `Shape` 抽象、容器 `Group` 和 `SvgDocument`。图形各自负责自己的几何属性，容器递归执行移动与缩放。
 - 当前文档按树遍历查找 id，不预先维护第二份索引。这样先保证唯一性和父子关系正确；若后续规模或需求需要，再将查找换成索引。
 - 加入模型测试，覆盖六种图形的统一操作、嵌套容器、重复 id 拒绝和祖先循环防护。本轮 `npm test` 的四项测试均通过。
 
-### 迭代 4：接通 CLI 与图形模型
+#### 迭代 4：接通 CLI 与图形模型
 
 - 在 CLI 增加带双引号参数的分词、`init/create/tree/show/help` 命令，并让 `create` 通过集中图形工厂构造六种内置图形。`in <容器 id>` 在创建时确定归属。
 - 显示命令读取模型并输出结构与属性；创建失败时先验证参数和目标容器，不改变当前文档。命令名分发与图形类型分发仍集中在架构方案标出的两处。
 - 管道输入测试发现读取结束后再次显示提示符会报错；增加关闭状态检查后修复。`npm test` 现有八项测试均通过。
 
-### 迭代 5：基本编辑与撤销重做
+#### 迭代 5：基本编辑与撤销重做
 
 - 引入 `CommandHistory` 管理 undo/redo 栈，成功执行的编辑命令才进入历史；undo 后的新编辑清空 redo。`init` 清空旧历史并禁止撤销，直到下一次成功编辑。
 - `create`、`delete` 作为命令；`move`、`scale`、`set` 通过可撤销的图形编辑命令调用模型行为。删除保存子树、原父容器和原位置；几何与属性编辑保存变更前状态，避免用反向浮点计算恢复。
 - 增加针对删除位置、容器子孙恢复、失败命令不入栈及 redo 清空的测试。此轮仍未实现分组和 SVG 文件读写。
 
-### 迭代 6：容器结构与绘制顺序
+#### 迭代 6：容器结构与绘制顺序
 
 - 增加 `group`、`ungroup`、`addto`、`front`、`back`。结构命令记录受影响节点的原父容器和同级位置；分组按文档中的相对顺序收编图形，一条命令对应一个撤销单元。
 - 执行前拒绝重复选择、祖先与子孙同时入组、把容器移入自身后代，以及解散根级容器。解组时子节点占据原组的位置；撤销时恢复原容器、子节点和顺序。
 - 增加跨容器分组、解组、同级顺序及非法操作的测试。本轮完成后运行 `npm test`，17 项通过。SVG 读写和画布命令仍未实现。
 
-### 迭代 7：SVG 文本与模型的双向转换
+#### 迭代 7：SVG 文本与模型的双向转换
 
 - 在 `src/infrastructure/SvgCodec.ts` 实现 SVG/XML 序列化与解析；用标准 XML 解析库 `saxes` 处理标签、命名空间、文本和实体，避免以字符串切割方式误读 XML。
 - 序列化按图形树输出六种内置元素、画布尺寸、层级、几何与样式，并转义特殊字符。解析时先收集显式 id，再给无 id 元素分配不冲突的 `标签名+序号`，返回待显示的警告。
 - 只接收当前模型能无损表达的 SVG 子集；不支持的元素、属性、变换或不匹配的 `viewBox` 会明确报错。增加往返、缺 id、非法与不支持输入测试。本轮 `npm test` 为 20 项通过。
 - 本轮只验证纯转换逻辑，尚未接入 CLI 文件命令；应用层文件存取接口与真实依赖方向将在下一轮连接和最终一致性自查中记录。
 
-### 迭代 8：文件命令与画布尺寸
+#### 迭代 8：文件命令与画布尺寸
 
 - 先为 `read/save/canvas` 写 CLI 行为测试，首次运行时三组测试因 `unknown command` 失败。随后新增应用层的 `DocumentStore` 接口、基础设施 `SvgFileStore`，在 `main.ts` 注入 CLI，使文件系统与 XML 细节不进入 CLI。
 - `read` 完成解析后才替换当前文档，输出缺 id 警告；`save` 成功后记住路径，可用于下次无参数保存。`canvas` 查询不改变历史，尺寸修改先验证参数再更新文档。
 - 失败的读、写、改尺寸保持当前文档和撤销历史；成功的 `read/save/canvas` 修改按题目阻断旧 undo/redo。补充文件往返、失败不变、路径复用和画布历史边界测试；本轮 `npm test` 为 24 项通过。
 - 这轮采用了测试先行、确认失败、最小实现、复跑测试的顺序。前几轮已有自动化测试，但不宣称整个项目从第一步起都严格遵循 TDD。
 
-### 迭代 9：最终命令验收与设计复核
+#### 迭代 9：最终命令验收与设计复核
 
 - 对照第 3 节命令表检查 `init/read/save/canvas`、六种图形的 `create`、全部编辑与结构命令、`tree/show/help` 和 `undo/redo`。用真实 CLI 依次执行嵌套建图、移动与撤销重做、缩放、属性修改、前后顺序调整、分组与解组、删除与恢复、画布修改、保存和读回；所有命令均得到预期反馈，最终读回 9 个元素。
 - 将真实生成的 SVG 交给独立工具 `xmllint --noout` 检查，确认 XML 格式有效；文件包含嵌套 `<g>`、六种内置图形中的五种叶子、样式与已转义的中文文本。自动化测试继续覆盖第六种叶子和读写往返。
 - 复核架构后发现初版图遗漏了 `cli → model` 直接依赖，且“应用层经存取接口访问文件”的描述比实际实现更宽。下方按真实导入关系修订，不把计划描述成已完成的隔离。
 
-### 迭代 10：结构编辑失败恢复
+#### 迭代 10：结构编辑失败恢复
 
 - 严格复核指出分组与解组虽然先验证参数，但多次移除、插入期间若抛错，可能留下半完成的图形树。先增加两个故障注入测试：分别在分组接入第二个图形、解组提升第一个子图形之后抛错；测试首次运行均失败，证明风险可以复现。另测试了分组撤销中途失败时，原树与撤销历史仍可重试。
 - 在 `SvgDocument.changeStructureAtomically` 中只保存节点引用、父子关系和顺序，不复制图形几何或整份 SVG。发生异常时恢复原树，再原样抛出错误。`group`、`ungroup`、`addto`、`front/back` 的多步骤执行与撤销均通过此边界；失败命令仍不会进入历史。
 - 补充 Command 参与者的实际映射，以及为何三种基本几何编辑共用 `ShapeEditCommand`。这次没有重写 CLI 或扩展 SVG 的 `transform` 支持；已知的 `CLI → MODEL` 依赖仍在下方如实记录。
 
-### 与 AI 协作中的关键判断和纠正
+#### 与 AI 协作中的关键判断和纠正
 
 1. 初版讨论先区分了 CLI 与 VS Code 插件。依据本阶段命令表，选择只做终端入口；题目中描述的 `box` 插件留到后续阶段，没有提前引入注册框架。
 2. **撤销到底保存什么状态？** 曾比较“每次编辑复制整个文档”和“由命令保存恢复自身所需的信息”。最终让几何编辑保存目标及子孙的旧状态，让删除、分组和改层级的命令保存节点引用、原父容器与同级位置。这样一条命令仍对应一次完整撤销，也避免普通编辑反复复制整份 SVG。跨容器分组、删除后恢复位置以及 redo 清空的测试检验了这一选择。
@@ -243,15 +156,15 @@ CODEC --> MODEL : 转换
 6. **初版依赖规则是否真的落地？** 初版设想 CLI 只依赖应用层；实现核查发现 `Cli` 直接构造 `SvgDocument`、调用 `ShapeFactory`，并读取模型生成 `tree/show`。最终没有把这条依赖包装成“完全隔离”：一致性自查画出实际箭头，说明这是当前版本的简化和后续增加其他入口时的重构点。文件解析仍留在基础设施层，模型没有反向依赖 CLI 或文件系统。
 7. **测试证据如何表述？** 早期模型和命令测试主要伴随实现增加，不能据此称整个项目严格遵循 TDD。迭代 8 的文件命令和迭代 10 的失败恢复先写测试、观察失败，再实现并复跑；文档分别记录了这个顺序。质量结论限定在已有自动化测试、真实 CLI 会话及生成 SVG 的 XML 检查覆盖的行为内。
 
-## 一致性自查
+### 一致性自查
 
-### 1. 模块划分与原方案是否一致？
+#### 1. 模块划分与原方案是否一致？
 
 五个计划目录均已落地：`model` 保存图形树与行为，`application` 保存编辑命令、历史和 `DocumentStore` 接口，`cli` 处理命令行协议，`infrastructure` 用 `SvgCodec` 与 `SvgFileStore` 处理 SVG 和文件，`main.ts` 装配入口。该划分与初版表格一致。
 
 实际职责有一处比初版更直接：CLI 不只是调用应用层命令，还直接创建 `SvgDocument`、调用 `ShapeFactory`、读取图形以输出 `tree/show`，并调用文档的 `resize`。这些操作仍由模型对象维护自身约束，但 CLI 知道了模型类型。此处是架构边界上的简化，不应被初版图隐藏。
 
-### 2. 依赖方向规则是否被违反？
+#### 2. 依赖方向规则是否被违反？
 
 按 `src/` 中的 `import` 检查，实际编译时依赖如下。图中只展开能解释职责和依赖的代表性类型；同类的六种图形、各个具体编辑命令仍归在各自包内。实线箭头表示使用或导入，虚线标出接口实现：
 
@@ -306,9 +219,9 @@ CODEC --> FACTORY : 构造图形
 - **表述修正**：`DocumentStore` 接口定义在应用层，但当前调用它的是 CLI；“应用层通过接口访问文件”是最初计划，不是当前运行路径。文件格式与文件系统仍被限制在 `infrastructure`，CLI 只依赖接口类型。
 - **集中分派**：命令名选择仍集中在 `Cli.execute`，图形类型选择集中在 `ShapeFactory`。各图形类内部按属性名判断允许的属性，不是图形类型分派。
 
-## 质量保证手段
+### 质量保证手段
 
-### 已执行的验证
+#### 已执行的验证
 
 | 范围 | 证据 | 结论 |
 | --- | --- | --- |
@@ -319,8 +232,147 @@ CODEC --> FACTORY : 构造图形
 | 完整入口 | `npm run cli` 输入一段真实命令序列 | 9 个元素保存后读回，`tree/show` 的层级、尺寸和属性符合预期；`xmllint --noout` 验证生成文件是合法 XML。 |
 | 构建与检查 | `npm run check`、`npm test`、`git diff --check` | TypeScript 检查通过；自动化测试 27 项通过；改动无空白错误。 |
 
-### 范围与限制
+#### 范围与限制
 
 - 当前读取的是题目六种内置元素及模型能表达的 SVG 子集；`path`、`transform`、CSS、`tspan` 等没有实现。遇到这类内容会报错，不会假装完整读入。`box` 是后续阶段目标，本阶段 `create box` 返回未知类型。
 - 自动化测试与真实 CLI 验收能支持对已覆盖行为的判断，但不能证明任意外部 SVG 都可无损读入。浏览器中的最终视觉效果仍建议在提交前由使用者打开生成的 `.svg` 再确认一次。
 - 文档中列出的直接 `CLI → MODEL` 依赖是已知架构偏差；如下一阶段增加其他入口，应优先处理该边界。
+
+## Phase 2
+
+本阶段包括 VS Code 扩展实践与 CLI 插件式重构。提交顺序见 [阶段二实施计划](./phase2-plan.md)。
+
+### 交付物索引
+
+| 题目第 7 节交付项 | 查看位置 |
+| --- | --- |
+| 1. 远程仓库与标签 | 两个阶段沿用同一仓库。Phase 1 对应 `final`，Phase 2 的 `p2` 待最终验收后创建。 |
+| 2. 源码 | [VS Code 扩展](../vscode-extension/src)、[CLI 内核](../src/cli)、[应用层](../src/application)、[领域模型](../src/model)、[扩展点](../src/extensions)、[SVG 读写](../src/infrastructure)、[插件](../src/plugins)、[宿主入口](../src/main.ts)、[装配代码](../src/composition)。 |
+| 3. 说明与演示 | [扩展点清单](#扩展点清单)、[装配方式和 JSON 格式](#装配方式与配置格式)、[重构前后 PlantUML 图](#重构前后的模块依赖图)、[ADR](#架构决策记录)、[`dir` 适配器](#命令插件与目录访问适配器)、[A.3 扩展分析与演示](#vs-code-扩展验收)。 |
+| 4. 源码度量 | [度量口径、报告和生成脚本](#源码度量)。 |
+| 5. ADR | [五条架构决策](#架构决策记录)，含属性契约、读回降级、dirty 语义和清单校验时机。 |
+| 6. 测试与证据 | [装配差异及回放](#测试与验收证据)、[测试源码](../test)、[VS Code 界面截图](./screenshots/vscode-svg-outline.png)、[扩展异常输入测试](../test/vscode-extension.test.ts)。 |
+
+总要求中的 AI 建议检查与修正见 [Phase 2 AI 协作与核查](#phase-2-ai-协作与核查)。
+
+### VS Code 扩展验收
+
+- [安装启动与手动验收](../vscode-extension/README.md#启动) · [示例 SVG](../vscode-extension/examples/flow.svg)
+- [宿主与扩展的职责](../vscode-extension/README.md#vs-code-与扩展的职责) · [Decorator 和 Adapter 分析](../vscode-extension/README.md#模式分析) · [Phase 1 代码复用评估](../vscode-extension/README.md#phase-1-代码复用)
+- [文件标记与大纲定位截图](./screenshots/vscode-svg-outline.png) · [大纲随编辑更新和不完整 XML 的测试](../test/vscode-extension.test.ts)
+
+### 扩展点清单
+
+Commit 3 将变化点从条件分派改为显式注册。
+
+| 接口名 | 职责 | 内核调用位置（文件与函数） | 已有实现 | 禁用 Phase 2 可选扩展后的行为 | 违反契约时的报错与处理 |
+| --- | --- | --- | --- | --- | --- |
+| `ShapeProvider` | 创建图形、识别并读回 SVG 元素、将图形转为 SVG。 | `ShapeFactory.ts` 的 `create` 和 `fromSvg`，`SvgCodec.ts` 的 `writeShape`。三条路径分别进入 `ExtensionRegistry.ts` 的 `createShape`、`readShape` 和 `writeShape` 调用提供者。 | `BuiltInShapeProvider`（`rect`、`circle`、`ellipse`、`line`、`text`、`g`）和 `BoxProvider`（`box`）。 | 六种内置图形仍可创建、读写。带 `data-kind="box"` 的组读回为普通 `g`，保留可表达的子节点。直接创建 `box` 会报未知图形类型。 | 图形类型重名时，加载器报 `duplicate registration: shapes/<type>`。创建未注册类型报 `unknown shape type: <type> (is the plugin loaded?)`。读回无匹配、匹配冲突或返回错误 ID 时，分别报 `unsupported SVG element: <element>`、`conflicting shape providers for SVG element: <element>`、`shape provider returned wrong id: <id>`，本次读入失败。写出无匹配或匹配冲突时，分别报 `no shape provider for: <type>`、`conflicting shape providers for: <type>`。 |
+| `Command` | 提供命令名、用法、帮助文案和执行行为。 | `Cli.ts` 的 `execute` 经 `ExtensionRegistry.ts` 的 `command` 查找实现并调用 `Command.execute`。`Cli.ts` 的 `registerBuiltInCommands` 注册的 `help` 读取注册命令的帮助。 | `Cli` 注册的 Phase 1 命令、`StatsCommand`、`DirCommand`。 | 原有命令与帮助继续可用。`stats`、`dir` 不出现在帮助中，执行它们会报 `unknown command: <name>`。 | 命令重名时，加载器报 `duplicate registration: commands/<name>`。执行方法抛错时，`Cli.run` 显示 `error: <message>` 并继续读取下一条命令。 |
+| `TreeDecorator` | 按注册顺序给 `tree` 的各图形行追加标签。 | `Cli.ts` 的 `suffix` 调用 `ExtensionRegistry.ts` 的 `treeDecorators` 取出实现，再逐个调用 `TreeDecorator.decorate`。 | `ModifiedStar`（`*`）和 `BoxTypeLabel`（`(box)`）。 | `tree` 保留原有结构和格式，无额外标签。 | 标签重名时，加载器报 `duplicate registration: decorators/<name>`。装饰方法抛错时，`Cli.run` 显示 `error: <message>` 并继续读取下一条命令。 |
+| `AttributeHandler` | 匹配图形和属性，并执行对应的领域修改。 | `Cli.ts` 的 `set` 调用 `ExtensionRegistry.ts` 的 `attributeHandlers`，后者用 `supports` 筛选。唯一匹配时，`ShapeEditCommand.ts` 的 `execute` 执行封装了处理器 `set` 的操作。 | `BoxAttributes`，分别处理 `box` 的 `fill` 和 `label`。 | 无匹配时调用 `Shape.ts` 的 `set`，原有属性照常修改。未定义属性报 `unknown attribute: <attribute>`。 | 处理器重名时，加载器报 `duplicate registration: attributes/<name>`。多个处理器匹配时，报 `conflicting attribute handlers: <names>` 并拒绝修改。处理器执行中抛错时恢复目标子树的属性快照，原错误由 CLI 显示，撤销和重做历史保留。 |
+
+插件通过 `ExtensionRegistrar` 的 `registerShape`、`registerCommand`、`registerTreeDecorator`、`registerAttributeHandler` 暂存贡献。加载器发现重名或清单与注册不一致时会拒绝当前插件的全部贡献，并继续加载后续插件。CLI 在终端消息前加上 `error:`。对应代码见 [注册表](../src/extensions/ExtensionRegistry.ts)、[加载器](../src/composition/PluginLoader.ts) 和 [CLI](../src/cli/Cli.ts)。
+
+`main.ts` 在装配层用 `DefaultExtensions` 注册六种内置图形，再把同一个注册表交给 CLI 与文件存储。CLI、图形工厂和编解码器显式接收注册表，按接口调用图形提供者。读回时先为 XML 子树分配 id，再由提供者构造完整图形子树，最后交给文档一次检查全部 id。属性处理器失败时由 `ShapeEditCommand` 恢复修改前状态，失败操作不进入历史。带 `data-kind` 的 `<g>` 在没有专用提供者时按普通组读入，保留可表达的子图形。
+
+`test/extensions.test.ts` 覆盖四个扩展点、属性冲突与失败回滚、标记组的缺省读回，以及 Phase 1 会话逐字节回归。首次脚本化度量保存在 [metrics/commit-3.txt](./metrics/commit-3.txt)，可通过 `npm run metrics` 重现。
+
+### 装配方式与配置格式
+
+`src/composition/PluginLoader.ts` 支持两种装配入口：`loadCode` 接收代码中选择的插件对象，`loadConfig` 按 JSON 文件中的路径顺序动态导入插件模块。两种入口最终都调用同一个 `loadOne` 流程，不存在两套注册规则。模块以配置文件为解析起点。按包名导入时优先使用 Node 的 ESM `import` 条件，并兼容原有 CommonJS 包和省略后缀的路径。配置格式如下：
+
+```json
+{
+  "plugins": [
+    { "module": "./dist/plugins/example.js", "options": {}, "enabled": true }
+  ]
+}
+```
+
+每个插件通过内核侧的 `PluginManifest` 声明 id、API 版本及 `shapes`、`commands`、`decorators`、`attributes` 四类贡献名称，并在 `activate` 中只访问临时 `ExtensionRegistrar`。组合层的 `StagedExtensions` 暂存实际贡献；加载器核对 manifest 后，`ExtensionRegistry.commit` 先检查全部名称，再一次提交。`enabled: false` 的条目直接跳过；若模块默认导出工厂函数，`options` 原样传给该工厂。激活异常、manifest 不一致、重复名称、配置或模块读取失败都会产生失败结果，不会留下部分注册；加载列表中的后续插件仍继续处理。`test/plugin-loader.test.ts` 覆盖代码装配、配置装配和上述失败回滚路径。
+
+### 命令插件与目录访问适配器
+
+`src/plugins/stats` 和 `src/plugins/dir` 是两个独立插件包，只通过 `Command` 与 `ExtensionRegistrar` 接入。各自的 `package.json` 用 `contributes.commands` 声明命令，测试会核对它与运行时 manifest 一致。默认代码装配在 `main.ts` 选择两个插件；使用 `--config plugins.config.json` 时，配置加载器导入相同的默认工厂，命令实现不变。禁用对应插件后，注册表中没有该命令，执行时返回 `unknown command`。
+
+`StatsCommand` 深度优先读取当前图形树。`Group` 子类只计入 containers，其他节点按首次出现的类型顺序计数；命令不调用 `executeEdit`，不会进入撤销历史。
+
+`dir` 的 Adapter 角色对应如下：
+
+| Adapter 角色 | 实现 | 职责 |
+| --- | --- | --- |
+| Target | `DirectoryAccess` | 提供当前目录路径和直接子项，不暴露 Node `Dirent`。 |
+| Adapter | `NodeDirectoryAdapter` | 把 `process.cwd()` 与 `readdirSync` 转换成稳定的 `DirectoryEntry`。 |
+| Adaptee | Node `fs` 与进程工作目录 | 提供真实目录信息。 |
+| Client | `DirCommand` | 只依赖 Target，负责分组、排序和输出。 |
+
+目录、普通文件和其他类型分别显示为 `[DIR]`、`[FILE]`、`[OTHER]`；符号链接不遍历目标，归入 `[OTHER]` 并排在普通文件之后。隐藏项照常显示。`test/command-plugins.test.ts` 使用测试替身覆盖混合目录、空目录、读取失败和历史不变，并用临时目录验证真实 Adapter；同一固定目录下的代码装配与配置装配输出逐字节一致。会话输入保存在 [transcript/cli-plugins.txt](./transcript/cli-plugins.txt)。
+
+### Box 图形与属性扩展
+
+`Box` 复用 `Group` 的子树行为，通过保护钩子拒绝摘除必要的矩形与文字。`BoxProvider` 负责生成派生 id、默认蓝色框体和标题位置，并读写 `data-kind="box"`。`BoxAttributes` 将 `fill` 和 `label` 转发给对应子部件，每次设置仍由原有编辑命令负责撤销和重做。
+
+安装插件时，缺少必要子部件或类型错误会拒绝整次读取。未安装时，标记组按普通 `g` 读取并保留子图形。嵌套 box 的解组会被必要子部件保护拦截，根级容器沿用原有解组限制。结构树显示 `box#id`，类型标签和修改标签通过各自的装饰器追加。
+
+代码装配在 `main.ts` 选择插件。版本 B 的命令输入保存在 [cli-box.txt](./transcript/cli-box.txt)。
+
+### 树标签插件
+
+`BoxTypeLabel` 和 `ModifiedStar` 分别注册到 `TreeDecorator`。组合根通过 `SavePointStore` 将成功读写通知交给启用的星号标签。相同的配置项可在 `plugins.config.json` 中独立启用，标签按注册顺序追加。保存点语义及传播规则见 [ADR](./adr/dirty-tree-label.md)。
+
+### 重构前后的模块依赖图
+
+Phase 1 在 `Cli.execute` 和图形工厂集中选择内置行为。Phase 2 将命令、图形、树标签及属性行为交给注册表，组合根选择插件，SVG 读写通过提供者完成。编辑命令和 Composite 图形树仍负责原有的撤销与结构约束。
+
+| 架构阶段 | PlantUML 成品 |
+| --- | --- |
+| Phase 1 交付时的实际依赖 | [Phase 1 依赖图](./最终代码的实际依赖.svg)，[PlantUML 源码](#一致性自查) |
+| Phase 2 的装配、内核与扩展关系 | [Phase 2 依赖图](./architecture-phase2.svg) · [PlantUML 源码](./architecture-phase2.puml) |
+
+### 架构决策记录
+
+- [属性处理契约](./adr/attribute-handlers.md)
+- [Box 读回与降级](./adr/box-readback.md)
+- [修改标记的保存点语义](./adr/dirty-tree-label.md)
+- [配置清单校验与事务注册](./adr/plugin-loading.md)
+- [编辑会话职责](./adr/editor-session.md)
+
+### 源码度量
+
+[度量报告](../docs/metrics/phase2.md) 列出内核、装配处和插件的文件及职责、行数与圈复杂度增量。VS Code 扩展单列。发布前可运行 `npm run metrics:history -- final HEAD` 核对当前提交。发布后用 `npm run metrics:history -- final p2` 对照两个交付标签。 [生成脚本](../scripts/history-metrics.ts)
+
+### 测试与验收证据
+
+#### 装配差异
+
+- `68b3ca0` 在 `main.ts` 选择 box。差异由新增插件、组合根、测试、命令会话和设计说明组成。
+- `ce12e07` 在 `demo/box-config` 通过配置选择同一个插件。差异由新增插件、配置、测试、命令会话和说明组成。两次接入共用 `8e3646c`，box 源码相同。
+
+```bash
+git diff --name-status 8e3646c 68b3ca0
+git diff --name-status 8e3646c ce12e07
+git diff --exit-code 8e3646c 68b3ca0 -- src ':(exclude)src/main.ts' ':(exclude)src/plugins/box'
+git diff --exit-code 8e3646c ce12e07 -- src ':(exclude)src/plugins/box'
+git diff --exit-code 68b3ca0 ce12e07 -- src/plugins/box
+```
+
+`dir` 首次接入的 `a74c8e0` 同时调整了通用装载和清单接口。补充的 [配置接入测试](../test/command-plugins.test.ts) 运行同一个编译后的入口，从空配置只增加 `dir` 一项，核对 `help`、目录输出和其他插件仍禁用的行为。
+
+#### 自动化测试与回放
+
+`npm test` 覆盖图形、文件 IO、属性冲突和回滚、插件装载失败与重复注册、真实目录和目录替身、标签状态、VS Code 大纲和文件装饰。`npm run verify:phase2` 回放基础、box、stats/dir 三个命令会话，比较代码和配置装配的标准输出及生成的 SVG。每组使用相同的运行目录和初始文件，目录输出不会包含验收日志。脚本还从 Git 的 `final` 构建旧版，逐字节比较禁用可选插件时的基础会话。输入位于 `doc/transcript/`，输出及 SVG 预期值独立保存在 [验收快照](./transcript/phase2.expected.json)。
+
+### 编辑会话职责
+
+当前文档、默认保存路径和编辑历史集中在应用层的 `EditorSession`。CLI 解析请求并打印结果，会话只在相应操作成功后更新状态和历史。现行 Phase 2 组件图中的包对应源码职责。失败读写、路径保留和历史屏障见 [会话测试](../test/editor-session.test.ts) 与 [设计决定](./adr/editor-session.md)。
+
+### Phase 2 AI 协作与核查
+
+| AI 建议或初步判断 | 核查过程 | 修正与验证 |
+| --- | --- | --- |
+| 排查空白的 SVG 预览时，最初把图形预览和扩展验收放在一起讨论。 | 对照题目 A.2 和开发窗口，确认要求是在原生 Outline 展示 SVG 层级、定位源码并随编辑更新。题目允许不完整 XML 时暂时清空大纲。 | 扩展验收统一从 SVG 文本编辑器检查文件标记与 Outline。截图记录节点定位，测试单独覆盖编辑更新和不完整 XML。 |
+| 初步验收认为，加载器比较运行时 `manifest` 与实际注册项就能覆盖贡献清单校验。 | 对照第 6 节和装载代码，发现配置方式还要核对插件包的 `package.json`。构造了一个运行时声明与实际注册一致、包清单却不一致的插件。 | Commit 10 在注册提交前加入包清单比较。回归测试确认错误插件的贡献不会残留，后面的有效插件仍能注册。 |
+| 审查 CLI 职责时，建议继续拆分命令分发、输出和编辑状态。 | 沿 `read`、`save`、`canvas` 检查状态变化，发现当前文档、默认保存路径和撤销历史需要在操作成功后一起维护。命令分发和输出仍属于终端交互。 | Commit 10 把状态规则集中到 `EditorSession`，保留 CLI 的命令交互职责，并更新 Phase 2 依赖图。会话测试检查失败操作保留文档、路径和两条历史栈，命令回放检查终端输出与生成的 SVG。 |
+
+对应证据见 [扩展测试](../test/vscode-extension.test.ts)、[插件清单测试](../test/plugin-loader.test.ts)、[编辑会话测试](../test/editor-session.test.ts) 和 [Phase 2 依赖图](./architecture-phase2.svg)。

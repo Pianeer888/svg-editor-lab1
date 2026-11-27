@@ -9,7 +9,7 @@ import { Cli } from '../dist/cli/Cli.js';
 import type { Command, CommandContext } from '../dist/extensions/Command.js';
 import type { Plugin } from '../dist/extensions/Plugin.js';
 import { PluginLoader } from '../dist/composition/PluginLoader.js';
-import { createDefaultExtensions } from '../dist/extensions/DefaultExtensions.js';
+import { createDefaultExtensions } from '../dist/composition/DefaultExtensions.js';
 import { SvgFileStore } from '../dist/infrastructure/SvgFileStore.js';
 import { StatsPlugin } from '../dist/plugins/stats/StatsPlugin.js';
 import { DirPlugin } from '../dist/plugins/dir/DirPlugin.js';
@@ -147,6 +147,28 @@ test('code and configuration composition produce byte-identical dir output', t =
   assert.equal(configured.stdout, code.stdout);
   assert.match(code.stdout, /\(total 0, containers 0\)/);
   assert.match(code.stdout, /\[DIR\]  docs[\s\S]*\[DIR\]  plugins[\s\S]*\[FILE\]  demo\.svg[\s\S]*\[FILE\]  package\.json/);
+});
+
+test('dir can be added to the host through configuration alone', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'svg-dir-config-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const main = resolve('dist/main.js');
+  const config = join(cwd, 'plugins.config.json');
+  const options = { cwd, input: 'help\ndir\nstats\n', encoding: 'utf8' } as const;
+
+  writeFileSync(config, JSON.stringify({ plugins: [] }));
+  const disabled = spawnSync(process.execPath, [main, '--config', config], options);
+  assert.equal(disabled.status, 0, disabled.stderr);
+  assert.equal(disabled.stderr, '');
+  assert.match(disabled.stdout, /error: unknown command: dir/);
+
+  writeFileSync(config, JSON.stringify({ plugins: [{ module: resolve('dist/plugins/dir/index.js') }] }));
+  const enabled = spawnSync(process.execPath, [main, '--config', config], options);
+  assert.equal(enabled.status, 0, enabled.stderr);
+  assert.equal(enabled.stderr, '');
+  assert.match(enabled.stdout, /^dir$/m);
+  assert.match(enabled.stdout, /^svg> \[FILE\]  plugins\.config\.json$/m);
+  assert.match(enabled.stdout, /error: unknown command: stats/);
 });
 
 test('stats and dir transcript matches the recorded output byte for byte with labels disabled', t => {

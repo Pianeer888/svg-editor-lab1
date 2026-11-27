@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { Cli } from '../dist/cli/Cli.js';
 import type { DocumentStore } from '../dist/application/DocumentStore.js';
 import { PluginLoader } from '../dist/composition/PluginLoader.js';
-import { createDefaultExtensions } from '../dist/extensions/DefaultExtensions.js';
+import { createDefaultExtensions } from '../dist/composition/DefaultExtensions.js';
 import { SvgCodec } from '../dist/infrastructure/SvgCodec.js';
 import { Group } from '../dist/model/Group.js';
 import createBoxPlugin from '../dist/plugins/box/index.js';
@@ -89,7 +89,7 @@ test('marked boxes round trip or fall back to ordinary groups without the plugin
   const encoded = SvgCodec.serialize(document, extensions);
   assert.match(encoded, /<g id="b" data-kind="box" stroke="red">/);
   assert.equal(SvgCodec.serialize(SvgCodec.parse(encoded, extensions).document, extensions), encoded);
-  const fallback = SvgCodec.parse(encoded).document;
+  const fallback = SvgCodec.parse(encoded, createDefaultExtensions()).document;
   assert.deepEqual([...fallback.walk()].map(shape => shape.type), ['g', 'text', 'rect']);
 });
 

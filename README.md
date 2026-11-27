@@ -1,6 +1,11 @@
 # svg-editor-lab1
 Software Design Lab 1 · SVG Editor CLI and VS Code Extension
 
+## 作业文档
+
+- **Phase 1 · SVG 命令行编辑器**。交付版本为 `final`，设计、过程记录和验收见 [Phase 1 文档](doc/README.md#phase-1)。
+- **Phase 2 · VS Code 扩展与 CLI 插件式重构**。按题目逐项查阅 [Phase 2 交付物索引](doc/README.md#交付物索引)，或直接查看 [VS Code 安装与演示](vscode-extension/README.md) 和 [CLI 扩展点清单](doc/README.md#扩展点清单)。
+
 ## 本地运行
 
 需要 Node.js 22.18 或更新版本，以及 npm。测试和验收脚本使用 Node.js 直接运行 TypeScript。首次运行前在项目目录执行：
@@ -31,5 +36,3 @@ npm run build
 npm test
 npm run verify:phase2
 ```
-
-Phase 1 版本见 `final` 标签。架构对比和 Phase 2 验收见 [设计记录](doc/README.md)，扩展安装和运行见 [VS Code 扩展说明](vscode-extension/README.md)。

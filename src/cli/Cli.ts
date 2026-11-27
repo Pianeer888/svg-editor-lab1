@@ -16,8 +16,7 @@ import { ReorderCommand } from '../application/ReorderCommand.js';
 import type { DocumentStore } from '../application/DocumentStore.js';
 import type { EditCommand } from '../application/EditCommand.js';
 import type { Command, CommandContext } from '../extensions/Command.js';
-import { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
-import { createDefaultExtensions } from '../extensions/DefaultExtensions.js';
+import type { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
 
 export class Cli implements CommandContext {
   private readonly session: EditorSession;
@@ -27,7 +26,7 @@ export class Cli implements CommandContext {
     private readonly input: Readable,
     private readonly output: Writable,
     store: DocumentStore,
-    private readonly extensions: ExtensionRegistry = createDefaultExtensions(),
+    private readonly extensions: ExtensionRegistry,
   ) {
     this.session = new EditorSession(store);
     this.shapes = new ShapeFactory(extensions);

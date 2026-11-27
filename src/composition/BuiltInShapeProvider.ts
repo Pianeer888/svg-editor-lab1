@@ -5,7 +5,7 @@ import { Line } from '../model/Line.js';
 import { Rect } from '../model/Rect.js';
 import { Shape } from '../model/Shape.js';
 import { Text } from '../model/Text.js';
-import type { ShapeProvider, SvgShapeInput, SvgShapeOutput } from './ShapeProvider.js';
+import type { ShapeProvider, SvgShapeInput, SvgShapeOutput } from '../extensions/ShapeProvider.js';
 
 type ShapeConstructor = (id: string, numbers: readonly number[], args: readonly string[]) => Shape;
 

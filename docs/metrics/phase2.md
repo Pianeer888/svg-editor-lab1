@@ -2,14 +2,14 @@
 
 由 `scripts/history-metrics.ts` 生成。行数为非空物理行（含注释）。圈复杂度为 TypeScript AST 中有实现的函数入口与决策点之和，包含顶层决策。决策计入 if、循环、catch、三元、非 default 的 case 和短路运算。
 
-CLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插件按 src/plugins 归类。内置图形和扩展契约计入内核。VS Code 扩展单列，依赖、测试、配置和构建产物排除。
+CLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插件按 src/plugins 归类。图形模型和扩展契约计入内核，默认注册计入装配处。VS Code 扩展单列，依赖、测试、配置和构建产物排除。
 
 | 范围 | Phase 1 文件 / 行 / 复杂度 | Phase 2 文件 / 行 / 复杂度 | 行数增量 | 复杂度增量 |
 | --- | ---: | ---: | ---: | ---: |
-| 内核 | 23 / 1005 / 449 | 32 / 1283 / 531 | 278 | 82 |
-| 装配处 | 1 / 8 / 2 | 3 / 280 / 111 | 272 | 109 |
+| 内核 | 23 / 1005 / 449 | 30 / 1183 / 482 | 178 | 33 |
+| 装配处 | 1 / 8 / 2 | 5 / 394 / 167 | 386 | 165 |
 | 插件 | 0 / 0 / 0 | 18 / 281 / 85 | 281 | 85 |
-| CLI 合计 | 24 / 1013 / 451 | 53 / 1844 / 727 | 831 | 276 |
+| CLI 合计 | 24 / 1013 / 451 | 53 / 1858 / 734 | 845 | 283 |
 | VS Code 扩展 | 0 / 0 / 0 | 4 / 94 / 27 | 94 | 27 |
 
 ## Phase 1 文件清单
@@ -56,20 +56,20 @@ CLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插�
 | `src/application/ReorderCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `ReorderCommand` | 26 | 7 |
 | `src/application/ShapeEditCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `ShapeEditCommand` | 19 | 10 |
 | `src/application/UngroupCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `UngroupCommand` | 38 | 13 |
-| `src/cli/Cli.ts` | 内核 | 命令行交互 · `Cli` | 236 | 98 |
+| `src/cli/Cli.ts` | 内核 | 命令行交互 · `Cli` | 235 | 98 |
 | `src/cli/Tokenizer.ts` | 内核 | 命令行交互 · `Tokenizer` | 18 | 9 |
-| `src/composition/PluginLoader.ts` | 装配处 | 装载与暂存 · `PluginLoadResult`、`PluginConfigEntry`、`ContributionKind`、`PluginLoader` | 202 | 91 |
-| `src/composition/StagedExtensions.ts` | 装配处 | 装载与暂存 · `StagedExtensions` | 40 | 9 |
-| `src/extensions/AttributeHandler.ts` | 内核 | 扩展接口、内置能力或注册 · `AttributeHandler` | 8 | 0 |
-| `src/extensions/BuiltInShapeProvider.ts` | 内核 | 扩展接口、内置能力或注册 · `ShapeConstructor`、`BuiltInShapeProvider`、`registerBuiltInShapes` | 89 | 47 |
-| `src/extensions/Command.ts` | 内核 | 扩展接口、内置能力或注册 · `CommandContext`、`Command` | 13 | 0 |
-| `src/extensions/DefaultExtensions.ts` | 内核 | 扩展接口、内置能力或注册 · `createDefaultExtensions` | 7 | 2 |
-| `src/extensions/ExtensionRegistry.ts` | 内核 | 扩展接口、内置能力或注册 · `ExtensionRegistry` | 73 | 39 |
-| `src/extensions/Plugin.ts` | 内核 | 扩展接口、内置能力或注册 · `PluginContributions`、`ExtensionContributions`、`PluginManifest`、`ExtensionRegistrar`、`Plugin`、`PluginFactory` | 33 | 0 |
-| `src/extensions/ShapeProvider.ts` | 内核 | 扩展接口、内置能力或注册 · `SvgShapeInput`、`SvgShapeOutput`、`ShapeProvider` | 21 | 0 |
-| `src/extensions/TreeDecorator.ts` | 内核 | 扩展接口、内置能力或注册 · `TreeDecorator` | 6 | 0 |
-| `src/infrastructure/SvgCodec.ts` | 内核 | SVG 编解码或文件存取 · `XmlNode`、`SvgCodec` | 128 | 58 |
-| `src/infrastructure/SvgFileStore.ts` | 内核 | SVG 编解码或文件存取 · `SvgFileStore` | 20 | 5 |
+| `src/composition/BuiltInShapeProvider.ts` | 装配处 | 默认装配、插件装载或暂存 · `ShapeConstructor`、`BuiltInShapeProvider`、`registerBuiltInShapes` | 89 | 47 |
+| `src/composition/DefaultExtensions.ts` | 装配处 | 默认装配、插件装载或暂存 · `createDefaultExtensions` | 7 | 2 |
+| `src/composition/PluginLoader.ts` | 装配处 | 默认装配、插件装载或暂存 · `PluginLoadResult`、`PluginConfigEntry`、`ContributionKind`、`PluginLoader` | 220 | 98 |
+| `src/composition/StagedExtensions.ts` | 装配处 | 默认装配、插件装载或暂存 · `StagedExtensions` | 40 | 9 |
+| `src/extensions/AttributeHandler.ts` | 内核 | 扩展接口或注册 · `AttributeHandler` | 8 | 0 |
+| `src/extensions/Command.ts` | 内核 | 扩展接口或注册 · `CommandContext`、`Command` | 13 | 0 |
+| `src/extensions/ExtensionRegistry.ts` | 内核 | 扩展接口或注册 · `ExtensionRegistry` | 73 | 39 |
+| `src/extensions/Plugin.ts` | 内核 | 扩展接口或注册 · `PluginContributions`、`ExtensionContributions`、`PluginManifest`、`ExtensionRegistrar`、`Plugin`、`PluginFactory` | 33 | 0 |
+| `src/extensions/ShapeProvider.ts` | 内核 | 扩展接口或注册 · `SvgShapeInput`、`SvgShapeOutput`、`ShapeProvider` | 21 | 0 |
+| `src/extensions/TreeDecorator.ts` | 内核 | 扩展接口或注册 · `TreeDecorator` | 6 | 0 |
+| `src/infrastructure/SvgCodec.ts` | 内核 | SVG 编解码或文件存取 · `XmlNode`、`SvgCodec` | 127 | 58 |
+| `src/infrastructure/SvgFileStore.ts` | 内核 | SVG 编解码或文件存取 · `SvgFileStore` | 19 | 5 |
 | `src/main.ts` | 装配处 | 启动与依赖装配 · `main` | 38 | 11 |
 | `src/model/Circle.ts` | 内核 | 文档与图形模型 · `Circle` | 18 | 10 |
 | `src/model/Ellipse.ts` | 内核 | 文档与图形模型 · `Ellipse` | 19 | 12 |
@@ -77,7 +77,7 @@ CLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插�
 | `src/model/Line.ts` | 内核 | 文档与图形模型 · `Line` | 20 | 11 |
 | `src/model/Rect.ts` | 内核 | 文档与图形模型 · `Rect` | 20 | 14 |
 | `src/model/Shape.ts` | 内核 | 文档与图形模型 · `ShapeState`、`Shape` | 70 | 34 |
-| `src/model/ShapeFactory.ts` | 内核 | 文档与图形模型 · `ShapeFactory` | 13 | 3 |
+| `src/model/ShapeFactory.ts` | 内核 | 文档与图形模型 · `ShapeFactory` | 12 | 3 |
 | `src/model/SvgDocument.ts` | 内核 | 文档与图形模型 · `SvgDocument` | 86 | 53 |
 | `src/model/Text.ts` | 内核 | 文档与图形模型 · `Text` | 19 | 10 |
 | `src/plugins/box-type-label/BoxTypeLabel.ts` | 插件 | 类型标签 · `BoxTypeLabel` | 8 | 2 |

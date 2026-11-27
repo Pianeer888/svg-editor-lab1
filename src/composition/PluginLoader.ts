@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import { readFile, stat } from 'node:fs/promises';
+import { createRequire, registerHooks } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
@@ -185,11 +185,30 @@ export class PluginLoader {
   }
 
   private async resolveModule(specifier: string, configPath: string): Promise<string> {
-    const requireFromConfig = createRequire(pathToFileURL(resolve(configPath)));
-    return pathToFileURL(requireFromConfig.resolve(specifier)).href;
+    const configUrl = pathToFileURL(resolve(configPath));
+    try {
+      const moduleUrl = this.resolveEsm(specifier, configUrl);
+      if (!moduleUrl.startsWith('file:') || (await stat(fileURLToPath(moduleUrl))).isFile()) return moduleUrl;
+    } catch {
+      // Keep CommonJS package entries and extensionless paths supported by the previous loader.
+    }
+    const modulePath = createRequire(configUrl).resolve(specifier);
+    return modulePath.startsWith('node:') ? modulePath : pathToFileURL(modulePath).href;
+  }
+
+  private resolveEsm(specifier: string, configUrl: URL): string {
+    // Set the resolution origin only for this synchronous call. Import runs after deregistration.
+    const hook = registerHooks({
+      resolve(request, context, nextResolve) {
+        return nextResolve(request, { ...context, parentURL: configUrl.href });
+      },
+    });
+    try { return import.meta.resolve(specifier); }
+    finally { hook.deregister(); }
   }
 
   private async readPackageManifest(moduleUrl: string): Promise<unknown> {
+    if (!moduleUrl.startsWith('file:')) return undefined;
     let directory = dirname(fileURLToPath(moduleUrl));
     for (;;) {
       try { return JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) as unknown; }

@@ -1,4 +1,4 @@
-import { ExtensionRegistry } from './ExtensionRegistry.js';
+import { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
 import { registerBuiltInShapes } from './BuiltInShapeProvider.js';
 
 export function createDefaultExtensions(): ExtensionRegistry {

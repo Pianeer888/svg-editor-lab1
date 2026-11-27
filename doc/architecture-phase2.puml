@@ -7,6 +7,7 @@ skinparam componentStyle rectangle
 package "装配层" {
   component "main.ts" as Main
   component "PluginLoader / StagedExtensions" as Loader
+  component "DefaultExtensions / BuiltInShapeProvider" as Builtin
   artifact "plugins.config.json" as Config
 }
 package "内核" {
@@ -24,7 +25,6 @@ package "内核" {
   }
   package "扩展点 · extensions" {
     component "ExtensionRegistry" as Registry
-    component "内置图形提供者" as Builtin
     component "Command / ShapeProvider /\nTreeDecorator / AttributeHandler" as Slots
   }
   package "基础设施 · infrastructure" {
@@ -40,6 +40,7 @@ package "可选插件" {
 }
 Main --> Cli : 启动并注入存储
 Main --> Loader : 选择装配方式
+Main --> Builtin : 注册六种内置图形
 Main --> Codec : 装配文件存储
 Main --> Star : 绑定保存点
 Main --> Box : 代码装配
@@ -61,6 +62,7 @@ History --> Model
 Factory --> Registry : 查找图形提供者
 Registry --> Slots
 Builtin ..> Slots : 实现图形提供者
+Builtin --> Registry : 登记内置图形
 Builtin --> Model
 Codec ..> Port : 实现
 Codec --> Registry : 选择图形提供者

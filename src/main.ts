@@ -1,6 +1,6 @@
 import { Cli } from './cli/Cli.js';
 import { SvgFileStore } from './infrastructure/SvgFileStore.js';
-import { createDefaultExtensions } from './extensions/DefaultExtensions.js';
+import { createDefaultExtensions } from './composition/DefaultExtensions.js';
 import { PluginLoader, type PluginLoadResult } from './composition/PluginLoader.js';
 import { createStatsPlugin } from './plugins/stats/index.js';
 import { createDirPlugin } from './plugins/dir/index.js';

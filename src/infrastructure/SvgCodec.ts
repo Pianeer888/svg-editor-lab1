@@ -4,7 +4,6 @@ import { ShapeFactory } from '../model/ShapeFactory.js';
 import { Group } from '../model/Group.js';
 import type { Shape } from '../model/Shape.js';
 import type { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
-import { createDefaultExtensions } from '../extensions/DefaultExtensions.js';
 import type { SvgShapeInput } from '../extensions/ShapeProvider.js';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
@@ -12,7 +11,7 @@ const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 type XmlNode = { name: string; attributes: Record<string, string>; children: XmlNode[]; text: string };
 
 export class SvgCodec {
-  static serialize(document: SvgDocument, extensions: ExtensionRegistry = createDefaultExtensions()): string {
+  static serialize(document: SvgDocument, extensions: ExtensionRegistry): string {
     const lines = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       `<svg xmlns="${SVG_NAMESPACE}" width="${document.width}" height="${document.height}" viewBox="0 0 ${document.width} ${document.height}">`,
@@ -22,7 +21,7 @@ export class SvgCodec {
     return `${lines.join('\n')}\n`;
   }
 
-  static parse(xml: string, extensions: ExtensionRegistry = createDefaultExtensions()): { document: SvgDocument; warnings: string[] } {
+  static parse(xml: string, extensions: ExtensionRegistry): { document: SvgDocument; warnings: string[] } {
     let root: XmlNode | undefined;
     const stack: XmlNode[] = [];
     const parser = new SaxesParser({ xmlns: true });

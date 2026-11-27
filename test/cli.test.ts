@@ -4,11 +4,13 @@ import { Readable, Writable } from 'node:stream';
 import { Cli } from '../dist/cli/Cli.js';
 import { Tokenizer } from '../dist/cli/Tokenizer.js';
 import { SvgFileStore } from '../dist/infrastructure/SvgFileStore.js';
+import { createDefaultExtensions } from '../dist/composition/DefaultExtensions.js';
 
 async function run(lines: string[]) {
   let output = '';
   const sink = new Writable({ write(chunk, _encoding, callback) { output += chunk.toString(); callback(); } });
-  await new Cli(Readable.from([lines.join('\n') + '\n']), sink, new SvgFileStore()).run();
+  const extensions = createDefaultExtensions();
+  await new Cli(Readable.from([lines.join('\n') + '\n']), sink, new SvgFileStore(extensions), extensions).run();
   return output;
 }
 

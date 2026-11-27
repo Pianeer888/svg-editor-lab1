@@ -3,10 +3,9 @@ import type { DocumentStore } from '../application/DocumentStore.js';
 import type { SvgDocument } from '../model/SvgDocument.js';
 import { SvgCodec } from './SvgCodec.js';
 import type { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
-import { createDefaultExtensions } from '../extensions/DefaultExtensions.js';
 
 export class SvgFileStore implements DocumentStore {
-  constructor(private readonly extensions: ExtensionRegistry = createDefaultExtensions()) {}
+  constructor(private readonly extensions: ExtensionRegistry) {}
 
   load(path: string): { document: SvgDocument; warnings: string[] } {
     let content: string;
