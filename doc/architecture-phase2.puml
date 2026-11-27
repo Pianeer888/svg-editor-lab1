@@ -10,14 +10,26 @@ package "装配层" {
   artifact "plugins.config.json" as Config
 }
 package "内核" {
-  component "Cli / Tokenizer" as Cli
-  component "编辑命令 / CommandHistory" as History
-  component "SvgDocument / Shape / Group" as Model
-  component "ExtensionRegistry / ShapeFactory" as Registry
-  component "内置图形提供者" as Builtin
-  component "Command / ShapeProvider /\nTreeDecorator / AttributeHandler" as Slots
-  interface "DocumentStore" as Port
-  component "SvgCodec / SvgFileStore" as Codec
+  package "终端交互 · cli" {
+    component "Cli / Tokenizer" as Cli
+  }
+  package "应用层 · application" {
+    component "EditorSession" as Session
+    component "编辑命令 / CommandHistory" as History
+    interface "DocumentStore" as Port
+  }
+  package "领域模型 · model" {
+    component "SvgDocument / Shape / Group" as Model
+    component "ShapeFactory" as Factory
+  }
+  package "扩展点 · extensions" {
+    component "ExtensionRegistry" as Registry
+    component "内置图形提供者" as Builtin
+    component "Command / ShapeProvider /\nTreeDecorator / AttributeHandler" as Slots
+  }
+  package "基础设施 · infrastructure" {
+    component "SvgCodec / SvgFileStore" as Codec
+  }
 }
 package "可选插件" {
   component "stats" as Stats
@@ -26,7 +38,7 @@ package "可选插件" {
   component "box-type-label" as Label
   component "modified-star / SavePointStore" as Star
 }
-Main --> Cli : 建立会话
+Main --> Cli : 启动并注入存储
 Main --> Loader : 选择装配方式
 Main --> Codec : 装配文件存储
 Main --> Star : 绑定保存点
@@ -37,14 +49,22 @@ Main --> Label
 Loader --> Config : 读取模块列表
 Loader --> Registry : 校验后提交
 Cli --> Registry : 分发命令和标签
-Cli --> Port : 读写
-Cli --> History : 执行、撤销与重做
+Cli --> Session : 访问文档、读写和历史
+Cli ..> Port : 传递注入的存储
+Cli --> History : 构造编辑命令
+Cli --> Factory : 创建图形
+Cli --> Model : 查询图形并显示
+Session --> Port : 加载／保存
+Session --> History : 执行、撤销与重做
+Session --> Model : 打开文档、调整画布
 History --> Model
+Factory --> Registry : 查找图形提供者
 Registry --> Slots
 Builtin ..> Slots : 实现图形提供者
 Builtin --> Model
 Codec ..> Port : 实现
 Codec --> Registry : 选择图形提供者
+Codec --> Factory : 构造读入的图形
 Codec --> Model
 Box ..> Slots
 Box --> Model

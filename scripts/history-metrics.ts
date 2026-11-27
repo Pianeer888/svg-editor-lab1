@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
@@ -11,7 +12,7 @@ const output: string[] = [];
 const print = (line: string) => output.push(line);
 const scopes = ['内核', '装配处', '插件', 'VS Code 扩展'];
 const responsibilities: Readonly<Record<string, string | undefined>> = {
-  application: '编辑命令、历史或存储契约',
+  application: '编辑会话、命令、历史或存储契约',
   cli: '命令行交互',
   composition: '装载与暂存',
   extensions: '扩展接口、内置能力或注册',
@@ -53,9 +54,16 @@ function measure(path: string, content: string) {
 type FileMetrics = ReturnType<typeof measure>;
 
 function snapshot(ref: string) {
+  const sourceDirs = ['src', 'vscode-extension/src'];
+  if (ref === '--worktree') {
+    const paths = git('ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...sourceDirs).split('\0');
+    return [...new Set(paths)].sort()
+      .filter(path => path.endsWith('.ts') && existsSync(join(cwd, path)))
+      .map(path => measure(path, readFileSync(join(cwd, path), 'utf8')));
+  }
   const index = ref === '--index';
-  const paths = (index ? git('ls-files', '-z', '--', 'src', 'vscode-extension/src')
-    : git('ls-tree', '-r', '-z', '--name-only', ref, '--', 'src', 'vscode-extension/src'))
+  const paths = (index ? git('ls-files', '-z', '--', ...sourceDirs)
+    : git('ls-tree', '-r', '-z', '--name-only', ref, '--', ...sourceDirs))
     .split('\0').filter(path => path.endsWith('.ts')).sort();
   return paths.map(path => measure(path, git('show', `${index ? '' : ref}:${path}`)));
 }

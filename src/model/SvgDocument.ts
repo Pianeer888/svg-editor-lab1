@@ -2,7 +2,7 @@ import { Group } from './Group.js';
 import { Shape } from './Shape.js';
 
 export class SvgDocument {
-  private readonly rootShapes: Shape[] = [];
+  #rootShapes: Shape[] = [];
   private widthValue: number;
   private heightValue: number;
 
@@ -16,43 +16,14 @@ export class SvgDocument {
 
   get width(): number { return this.widthValue; }
   get height(): number { return this.heightValue; }
-  get children(): readonly Shape[] { return this.rootShapes; }
+  get children(): readonly Shape[] { return [...this.#rootShapes]; }
 
   /** Restore tree membership and order if a multi-step structure edit throws. */
   changeStructureAtomically(action: () => void): void {
-    const roots = [...this.rootShapes];
-    const children = new Map<Group, Shape[]>();
-    const collect = (shapes: readonly Shape[]): void => {
-      for (const shape of shapes) {
-        if (shape instanceof Group) {
-          children.set(shape, [...shape.children]);
-          collect(shape.children);
-        }
-      }
-    };
-    collect(roots);
-    try { action(); }
+    const roots = [...this.#rootShapes];
+    try { Group.withChildRollback(roots, action); }
     catch (error) {
-      const groups = new Set(children.keys());
-      const collectCurrent = (shapes: readonly Shape[]): void => {
-        for (const shape of shapes) {
-          if (shape instanceof Group) {
-            groups.add(shape);
-            collectCurrent(shape.children);
-          }
-        }
-      };
-      collectCurrent(this.rootShapes);
-      for (const group of groups) group.detachAllForRecovery();
-      this.rootShapes.length = 0;
-      const restore = (shapes: readonly Shape[], parent?: Group): void => {
-        for (const shape of shapes) {
-          if (parent) parent.append(shape);
-          else this.rootShapes.push(shape);
-          if (shape instanceof Group) restore(children.get(shape) ?? [], shape);
-        }
-      };
-      restore(roots);
+      this.#rootShapes = roots;
       throw error;
     }
   }
@@ -70,7 +41,7 @@ export class SvgDocument {
     if (!shape) throw new Error(`no such shape: ${id}`);
     const parent = shape.parent;
     return { shape, ...(parent === null ? {} : { parentId: parent.id }),
-      index: (parent === null ? this.rootShapes : parent.children).indexOf(shape) };
+      index: (parent === null ? this.#rootShapes : parent.children).indexOf(shape) };
   }
 
   find(id: string): Shape | undefined {
@@ -98,9 +69,9 @@ export class SvgDocument {
 
     if (parent instanceof Group) parent.insert(shape, index ?? parent.children.length);
     else {
-      const position = index ?? this.rootShapes.length;
-      if (!Number.isInteger(position) || position < 0 || position > this.rootShapes.length) throw new Error('invalid child position');
-      this.rootShapes.splice(position, 0, shape);
+      const position = index ?? this.#rootShapes.length;
+      if (!Number.isInteger(position) || position < 0 || position > this.#rootShapes.length) throw new Error('invalid child position');
+      this.#rootShapes.splice(position, 0, shape);
     }
   }
 
@@ -109,13 +80,13 @@ export class SvgDocument {
     if (!shape) throw new Error(`no such shape: ${id}`);
     const parent = shape.parent;
     if (parent) return { shape, parentId: parent.id, index: parent.remove(shape) };
-    const index = this.rootShapes.indexOf(shape);
-    this.rootShapes.splice(index, 1);
+    const index = this.#rootShapes.indexOf(shape);
+    this.#rootShapes.splice(index, 1);
     return { shape, index };
   }
 
   *walk(): IterableIterator<Shape> {
-    for (const shape of this.rootShapes) yield* SvgDocument.walkFrom(shape);
+    for (const shape of this.#rootShapes) yield* SvgDocument.walkFrom(shape);
   }
 
   private containsReference(target: Shape): boolean {

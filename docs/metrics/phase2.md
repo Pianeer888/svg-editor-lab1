@@ -6,26 +6,26 @@ CLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插�
 
 | 范围 | Phase 1 文件 / 行 / 复杂度 | Phase 2 文件 / 行 / 复杂度 | 行数增量 | 复杂度增量 |
 | --- | ---: | ---: | ---: | ---: |
-| 内核 | 23 / 1005 / 449 | 31 / 1238 / 522 | 233 | 73 |
-| 装配处 | 1 / 8 / 2 | 3 / 251 / 95 | 243 | 93 |
+| 内核 | 23 / 1005 / 449 | 32 / 1283 / 531 | 278 | 82 |
+| 装配处 | 1 / 8 / 2 | 3 / 280 / 111 | 272 | 109 |
 | 插件 | 0 / 0 / 0 | 18 / 281 / 85 | 281 | 85 |
-| CLI 合计 | 24 / 1013 / 451 | 52 / 1770 / 702 | 757 | 251 |
+| CLI 合计 | 24 / 1013 / 451 | 53 / 1844 / 727 | 831 | 276 |
 | VS Code 扩展 | 0 / 0 / 0 | 4 / 94 / 27 | 94 | 27 |
 
 ## Phase 1 文件清单
 
 | 文件 | 范围 | 职责 / 声明 | 行数 | 复杂度 |
 | --- | --- | --- | ---: | ---: |
-| `src/application/AddToCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `AddToCommand` | 33 | 10 |
-| `src/application/CommandHistory.ts` | 内核 | 编辑命令、历史或存储契约 · `CommandHistory` | 35 | 8 |
-| `src/application/CreateCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `CreateCommand` | 11 | 3 |
-| `src/application/DeleteCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `DeleteCommand` | 17 | 5 |
-| `src/application/DocumentStore.ts` | 内核 | 编辑命令、历史或存储契约 · `DocumentStore` | 6 | 0 |
-| `src/application/EditCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `EditCommand` | 5 | 0 |
-| `src/application/GroupCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `Location`、`GroupCommand` | 43 | 18 |
-| `src/application/ReorderCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `ReorderCommand` | 26 | 7 |
-| `src/application/ShapeEditCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `ShapeEditCommand` | 19 | 10 |
-| `src/application/UngroupCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `UngroupCommand` | 38 | 13 |
+| `src/application/AddToCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `AddToCommand` | 33 | 10 |
+| `src/application/CommandHistory.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `CommandHistory` | 35 | 8 |
+| `src/application/CreateCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `CreateCommand` | 11 | 3 |
+| `src/application/DeleteCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `DeleteCommand` | 17 | 5 |
+| `src/application/DocumentStore.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `DocumentStore` | 6 | 0 |
+| `src/application/EditCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `EditCommand` | 5 | 0 |
+| `src/application/GroupCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `Location`、`GroupCommand` | 43 | 18 |
+| `src/application/ReorderCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `ReorderCommand` | 26 | 7 |
+| `src/application/ShapeEditCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `ShapeEditCommand` | 19 | 10 |
+| `src/application/UngroupCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `UngroupCommand` | 38 | 13 |
 | `src/cli/Cli.ts` | 内核 | 命令行交互 · `Cli` | 218 | 87 |
 | `src/cli/Tokenizer.ts` | 内核 | 命令行交互 · `Tokenizer` | 18 | 9 |
 | `src/infrastructure/SvgCodec.ts` | 内核 | SVG 编解码或文件存取 · `XmlNode`、`SvgCodec` | 129 | 65 |
@@ -45,21 +45,22 @@ CLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插�
 
 | 文件 | 范围 | 职责 / 声明 | 行数 | 复杂度 |
 | --- | --- | --- | ---: | ---: |
-| `src/application/AddToCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `AddToCommand` | 33 | 10 |
-| `src/application/CommandHistory.ts` | 内核 | 编辑命令、历史或存储契约 · `CommandHistory` | 35 | 8 |
-| `src/application/CreateCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `CreateCommand` | 11 | 3 |
-| `src/application/DeleteCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `DeleteCommand` | 17 | 5 |
-| `src/application/DocumentStore.ts` | 内核 | 编辑命令、历史或存储契约 · `DocumentStore` | 6 | 0 |
-| `src/application/EditCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `EditCommand` | 5 | 0 |
-| `src/application/GroupCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `Location`、`GroupCommand` | 43 | 18 |
-| `src/application/ReorderCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `ReorderCommand` | 26 | 7 |
-| `src/application/ShapeEditCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `ShapeEditCommand` | 19 | 10 |
-| `src/application/UngroupCommand.ts` | 内核 | 编辑命令、历史或存储契约 · `UngroupCommand` | 38 | 13 |
-| `src/cli/Cli.ts` | 内核 | 命令行交互 · `Cli` | 249 | 102 |
+| `src/application/AddToCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `AddToCommand` | 33 | 10 |
+| `src/application/CommandHistory.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `CommandHistory` | 35 | 8 |
+| `src/application/CreateCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `CreateCommand` | 11 | 3 |
+| `src/application/DeleteCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `DeleteCommand` | 17 | 5 |
+| `src/application/DocumentStore.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `DocumentStore` | 6 | 0 |
+| `src/application/EditCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `EditCommand` | 5 | 0 |
+| `src/application/EditorSession.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `EditorSession` | 52 | 13 |
+| `src/application/GroupCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `Location`、`GroupCommand` | 43 | 18 |
+| `src/application/ReorderCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `ReorderCommand` | 26 | 7 |
+| `src/application/ShapeEditCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `ShapeEditCommand` | 19 | 10 |
+| `src/application/UngroupCommand.ts` | 内核 | 编辑会话、命令、历史或存储契约 · `UngroupCommand` | 38 | 13 |
+| `src/cli/Cli.ts` | 内核 | 命令行交互 · `Cli` | 236 | 98 |
 | `src/cli/Tokenizer.ts` | 内核 | 命令行交互 · `Tokenizer` | 18 | 9 |
-| `src/composition/PluginLoader.ts` | 装配处 | 装载与暂存 · `PluginLoadResult`、`PluginConfigEntry`、`ContributionKind`、`PluginLoader` | 173 | 75 |
+| `src/composition/PluginLoader.ts` | 装配处 | 装载与暂存 · `PluginLoadResult`、`PluginConfigEntry`、`ContributionKind`、`PluginLoader` | 202 | 91 |
 | `src/composition/StagedExtensions.ts` | 装配处 | 装载与暂存 · `StagedExtensions` | 40 | 9 |
-| `src/extensions/AttributeHandler.ts` | 内核 | 扩展接口、内置能力或注册 · `AttributeHandler` | 6 | 0 |
+| `src/extensions/AttributeHandler.ts` | 内核 | 扩展接口、内置能力或注册 · `AttributeHandler` | 8 | 0 |
 | `src/extensions/BuiltInShapeProvider.ts` | 内核 | 扩展接口、内置能力或注册 · `ShapeConstructor`、`BuiltInShapeProvider`、`registerBuiltInShapes` | 89 | 47 |
 | `src/extensions/Command.ts` | 内核 | 扩展接口、内置能力或注册 · `CommandContext`、`Command` | 13 | 0 |
 | `src/extensions/DefaultExtensions.ts` | 内核 | 扩展接口、内置能力或注册 · `createDefaultExtensions` | 7 | 2 |
@@ -72,12 +73,12 @@ CLI 范围为 src 下的 TypeScript。入口与 composition 单列，可选插�
 | `src/main.ts` | 装配处 | 启动与依赖装配 · `main` | 38 | 11 |
 | `src/model/Circle.ts` | 内核 | 文档与图形模型 · `Circle` | 18 | 10 |
 | `src/model/Ellipse.ts` | 内核 | 文档与图形模型 · `Ellipse` | 19 | 12 |
-| `src/model/Group.ts` | 内核 | 文档与图形模型 · `Group` | 49 | 27 |
+| `src/model/Group.ts` | 内核 | 文档与图形模型 · `Group` | 81 | 39 |
 | `src/model/Line.ts` | 内核 | 文档与图形模型 · `Line` | 20 | 11 |
 | `src/model/Rect.ts` | 内核 | 文档与图形模型 · `Rect` | 20 | 14 |
-| `src/model/Shape.ts` | 内核 | 文档与图形模型 · `ShapeState`、`Shape` | 69 | 34 |
+| `src/model/Shape.ts` | 内核 | 文档与图形模型 · `ShapeState`、`Shape` | 70 | 34 |
 | `src/model/ShapeFactory.ts` | 内核 | 文档与图形模型 · `ShapeFactory` | 13 | 3 |
-| `src/model/SvgDocument.ts` | 内核 | 文档与图形模型 · `SvgDocument` | 115 | 65 |
+| `src/model/SvgDocument.ts` | 内核 | 文档与图形模型 · `SvgDocument` | 86 | 53 |
 | `src/model/Text.ts` | 内核 | 文档与图形模型 · `Text` | 19 | 10 |
 | `src/plugins/box-type-label/BoxTypeLabel.ts` | 插件 | 类型标签 · `BoxTypeLabel` | 8 | 2 |
 | `src/plugins/box-type-label/index.ts` | 插件 | 类型标签 · `createBoxTypeLabelPlugin` | 12 | 2 |

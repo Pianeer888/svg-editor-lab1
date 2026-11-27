@@ -67,6 +67,22 @@ test('a group cannot contain itself or an ancestor', () => {
   assert.throws(() => child.append(parent), /own descendant/);
 });
 
+test('a document and its groups own their child lists and parent links', () => {
+  const document = new SvgDocument();
+  const group = new Group('group');
+  const shape = new Rect('child', 0, 0, 1, 1);
+  document.add(group);
+  document.add(shape, group.id);
+  (document.children as Shape[]).pop();
+  (group.children as Shape[]).pop();
+  assert.equal(document.find('child'), shape);
+  assert.equal(shape.parent, group);
+  assert.equal('setParent' in shape, false);
+  assert.equal('detachAllForRecovery' in group, false);
+  assert.throws(() => Group.withChildRollback([shape], () => assert.fail('edit must be rejected')), /root shapes/);
+  assert.equal(shape.parent, group);
+});
+
 test('a composite can protect required children without blocking structural rollback', () => {
   class ProtectedGroup extends Group {
     protected override assertChildRemovalAllowed(child: Shape) {
@@ -84,6 +100,26 @@ test('a composite can protect required children without blocking structural roll
     doc.remove('required');
   }), /required child/);
   assert.deepEqual([...doc.walk()].map(shape => [shape.id, shape.parent?.id ?? null]), before);
+});
+
+test('failed edits restore original nodes even when a temporary parent is no longer in the document', () => {
+  const document = new SvgDocument();
+  const child = new Rect('child', 0, 0, 1, 1);
+  const existing = new Rect('existing', 0, 0, 1, 1);
+  const temporary = new Group('temporary');
+  temporary.append(existing);
+  document.add(child);
+  assert.throws(() => document.changeStructureAtomically(() => {
+    document.add(temporary);
+    document.remove('child');
+    document.add(child, temporary.id);
+    document.remove(temporary.id);
+    throw new Error('failed edit');
+  }), /failed edit/);
+  assert.deepEqual(document.children, [child]);
+  assert.equal(child.parent, null);
+  assert.deepEqual(temporary.children, [existing]);
+  assert.equal(existing.parent, temporary);
 });
 
 test('group preserves document order and undo restores original parents and positions', () => {

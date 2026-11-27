@@ -8,12 +8,12 @@ Phase 2 的实施计划见 [phase2-plan.md](./phase2-plan.md)；VS Code 扩展�
 
 Commit 3 将变化点从条件分派改为显式注册，四个契约及调用位置如下。
 
-| 扩展点 | 契约与注册位置 | 实际调用位置 | 缺省行为与错误 |
+| 扩展点与职责 | 现有实现 | 注册与调用位置 | 缺省行为与错误 |
 | --- | --- | --- | --- |
-| 图形 | `ShapeProvider`、`ExtensionRegistry.registerShape` | `ShapeFactory.create/fromSvg`、`SvgCodec.writeShape` | 注册六种内置图形；未知类型、重复提供者或写出冲突会报错。 |
-| 命令 | `Command`、`ExtensionRegistry.registerCommand` | `Cli.execute` | 全部内置命令经注册表分发；重复名称会报错，扩展命令的帮助文本进入 `help`。 |
-| 树标签 | `TreeDecorator`、`ExtensionRegistry.registerTreeDecorator` | `Cli.suffix` | 按注册顺序组合；没有标签时不增加空格，原 `tree` 输出保持不变。 |
-| 属性 | `AttributeHandler`、`ExtensionRegistry.registerAttributeHandler` | `Cli.set` | 无匹配时调用 `Shape.set`；一个匹配时作为单个 undo 单元执行；多个匹配时拒绝修改。 |
+| `ShapeProvider` 创建、读回和写出图形 | `BuiltInShapeProvider`、`BoxProvider` | `ExtensionRegistry.ts` 的 `registerShape`、`ShapeFactory.ts` 的 `create` 和 `fromSvg`、`SvgCodec.ts` 的 `writeShape` | 启用六种内置图形。未知类型、重复提供者或写出冲突会报错。 |
+| `Command` 增加终端命令及帮助 | `Cli` 注册的内置命令、`StatsCommand`、`DirCommand` | `ExtensionRegistry.ts` 的 `registerCommand`、`Cli.ts` 的 `execute` | 内置命令继续分发。未注册的名称报 `unknown command`，重复注册报错。 |
+| `TreeDecorator` 为树的图形行追加标签 | `ModifiedStar`、`BoxTypeLabel` | `ExtensionRegistry.ts` 的 `registerTreeDecorator`、`Cli.ts` 的 `suffix` | 没有标签时保留原输出。标签按注册顺序拼接，重名时拒绝注册。 |
+| `AttributeHandler` 定义特定图形的属性行为 | `BoxAttributes` | `ExtensionRegistry.ts` 的 `registerAttributeHandler`、`Cli.ts` 的 `set` | 无匹配时调用 `Shape.set`，一个匹配时作为单个 undo 单元，多个匹配时拒绝修改。 |
 
 `src/extensions/DefaultExtensions.ts` 是当前组合入口，`main.ts` 把同一个注册表实例交给 CLI 与文件存储。内置图形由 `BuiltInShapeProvider` 注册；SVG 编解码不再包含图形类型分支。读回时先为 XML 子树分配 id，再由提供者构造完整图形子树，最后交给文档一次检查全部 id。属性处理器失败时由 `ShapeEditCommand` 恢复修改前状态，失败操作不进入历史。带 `data-kind` 的 `<g>` 在没有专用提供者时按普通组读入，保留可表达的子图形。
 
@@ -89,6 +89,10 @@ git diff --exit-code 68b3ca0 ce12e07 -- src/plugins/box
 #### 自动验收
 
 `npm test` 覆盖图形、文件 IO、属性冲突和回滚、插件装载失败与重复注册、真实目录和目录替身、标签状态、VS Code 大纲和文件装饰。`npm run verify:phase2` 回放基础、box、stats/dir 三个命令会话，比较代码和配置装配的标准输出及生成的 SVG。每组使用相同的运行目录和初始文件，目录输出不会包含验收日志。脚本还从 Git 的 `final` 构建旧版，逐字节比较禁用可选插件时的基础会话。输入位于 `doc/transcript/`，输出及 SVG 预期值独立保存在 [验收快照](./transcript/phase2.expected.json)。
+
+#### 编辑会话职责
+
+当前文档、默认保存路径和编辑历史集中在应用层的 `EditorSession`。CLI 解析请求并打印结果，会话只在相应操作成功后更新状态和历史。现行 Phase 2 组件图中的包对应源码职责。失败读写、路径保留和历史屏障见 [会话测试](../test/editor-session.test.ts) 与 [设计决定](./adr/editor-session.md)。
 
 ## Phase 1 架构方案
 

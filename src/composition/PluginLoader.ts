@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
 import {
   PLUGIN_API_VERSION, type Plugin, type PluginContributions, type PluginFactory, type PluginManifest,
@@ -71,23 +71,27 @@ export class PluginLoader {
       const candidate = typeof exported === 'function'
         ? (exported as PluginFactory)(entry.options)
         : this.withoutOptions(exported, entry);
-      return this.loadOne(candidate, entry.module);
+      const packageManifest = await this.readPackageManifest(moduleUrl);
+      return this.loadOne(candidate, entry.module, packageManifest);
     } catch (error) {
       return this.failed(entry.module, `plugin failed to activate: ${entry.module} (${this.message(error)})`);
     }
   }
 
-  private loadOne(candidate: unknown, source: string): PluginLoadResult {
+  private loadOne(candidate: unknown, source: string, packageManifest?: unknown): PluginLoadResult {
     let pluginId: string | undefined;
     try {
       const plugin = this.plugin(candidate);
       const manifest = this.manifest(plugin.manifest);
       pluginId = manifest.id;
       if (this.loadedIds.has(pluginId)) throw new Error(`duplicate registration: plugins/${pluginId}`);
+      const declared = this.packageContributions(packageManifest, pluginId);
 
       const staged = new StagedExtensions();
       plugin.activate(staged);
-      this.validateContributions(manifest, staged.names());
+      const actual = staged.names();
+      if (declared) this.validateContributions(pluginId, declared, actual);
+      this.validateContributions(pluginId, manifest.contributes, actual);
       this.extensions.commit(staged.contributions());
       this.loadedIds.add(pluginId);
       return { source, pluginId, status: 'loaded' };
@@ -122,22 +126,36 @@ export class PluginLoader {
   }
 
   private validateContributions(
-    manifest: PluginManifest,
+    pluginId: string,
+    expected: PluginContributions,
     actual: Record<ContributionKind, readonly string[]>,
   ): void {
     for (const kind of contributionKinds) {
-      const declared = [...(manifest.contributes[kind] ?? [])].sort();
+      const declared = [...(expected[kind] ?? [])].sort();
       const registered = [...actual[kind]].sort();
       if (declared.length !== registered.length || declared.some((name, index) => name !== registered[index])) {
-        const declaredText = this.contributionSummary(manifest.contributes);
+        const declaredText = this.contributionSummary(expected);
         const registeredText = this.contributionSummary(actual);
-        throw new Error(`plugin manifest mismatch: ${manifest.id} (declared: ${declaredText}, registered: ${registeredText})`);
+        throw new Error(`plugin manifest mismatch: ${pluginId} (declared: ${declaredText}, registered: ${registeredText})`);
       }
     }
   }
 
-  private expectedNames(value: unknown): void {
-    if (typeof value !== 'object' || value === null) throw new Error('plugin contributions required');
+  private packageContributions(value: unknown, pluginId: string): PluginContributions | undefined {
+    if (value === undefined) return undefined;
+    try {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('invalid package manifest');
+      const candidate = (value as { contributes?: unknown }).contributes;
+      const contributes = candidate === undefined ? {} : candidate;
+      this.expectedNames(contributes);
+      return contributes;
+    } catch (error) {
+      throw new Error(`plugin manifest mismatch: ${pluginId} (declared: invalid package.json contributes (${this.message(error)}), registered: none)`);
+    }
+  }
+
+  private expectedNames(value: unknown): asserts value is PluginContributions {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('plugin contributions required');
     const contributions = value as Record<string, unknown>;
     for (const key of Object.keys(contributions)) {
       if (!(contributionKinds as readonly string[]).includes(key)) throw new Error(`unknown contribution category: ${key}`);
@@ -169,6 +187,19 @@ export class PluginLoader {
   private async resolveModule(specifier: string, configPath: string): Promise<string> {
     const requireFromConfig = createRequire(pathToFileURL(resolve(configPath)));
     return pathToFileURL(requireFromConfig.resolve(specifier)).href;
+  }
+
+  private async readPackageManifest(moduleUrl: string): Promise<unknown> {
+    let directory = dirname(fileURLToPath(moduleUrl));
+    for (;;) {
+      try { return JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) as unknown; }
+      catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+      }
+      const parent = dirname(directory);
+      if (parent === directory) return undefined;
+      directory = parent;
+    }
   }
 
   private withoutOptions(exported: unknown, entry: PluginConfigEntry): unknown {

@@ -3,7 +3,7 @@ import type { Group } from './Group.js';
 export type ShapeState = { geometry: Readonly<Record<string, number | string>>; fill?: string; stroke?: string; strokeWidth?: number };
 
 export abstract class Shape {
-  private parentShape: Group | null = null;
+  #parentShape: Group | null = null;
   private fillValue: string | undefined;
   private strokeValue: string | undefined;
   private strokeWidthValue: number | undefined;
@@ -12,13 +12,14 @@ export abstract class Shape {
     if (!id.trim()) throw new Error('shape id must not be empty');
   }
 
-  get parent(): Group | null { return this.parentShape; }
+  get parent(): Group | null { return this.#parentShape; }
   get fill(): string | undefined { return this.fillValue; }
   get stroke(): string | undefined { return this.strokeValue; }
   get strokeWidth(): number | undefined { return this.strokeWidthValue; }
 
-  /** Called by the document when a shape is attached or detached. */
-  setParent(parent: Group | null): void { this.parentShape = parent; }
+  protected static setParentOf(shape: Shape, parent: Group | null): void {
+    shape.#parentShape = parent;
+  }
 
   set(attribute: string, value: string): void {
     switch (attribute) {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDefaultExtensions } from '../dist/extensions/DefaultExtensions.js';
@@ -120,10 +120,12 @@ test('configuration composition reports import failure and loads later modules',
       { module: './disabled.mjs', enabled: false },
       { module: './missing.mjs' },
       { module: './no-default.mjs' },
+      { module: './missing-dependency.mjs' },
       { module: './configured.mjs', options: { command: 'configured' } },
     ],
   }));
   writeFileSync(join(directory, 'no-default.mjs'), 'export const value = 1;');
+  writeFileSync(join(directory, 'missing-dependency.mjs'), "import './absent-dependency.mjs'; export default {};");
   writeFileSync(join(directory, 'configured.mjs'), `
     export default options => ({
       manifest: { id: 'sample.configured', apiVersion: 1, contributes: { commands: [options.command] } },
@@ -134,9 +136,10 @@ test('configuration composition reports import failure and loads later modules',
   `);
   const extensions = createDefaultExtensions();
   const results = await new PluginLoader(extensions).loadConfig(configPath);
-  assert.deepEqual(results.map(result => result.status), ['failed', 'failed', 'loaded']);
+  assert.deepEqual(results.map(result => result.status), ['failed', 'failed', 'failed', 'loaded']);
   assert.equal(results[0].error, 'plugin not found: ./missing.mjs');
   assert.equal(results[1].error, 'plugin has no default export: ./no-default.mjs');
+  assert.match(results[2].error ?? '', /^plugin failed to activate: \.\/missing-dependency\.mjs .*absent-dependency\.mjs/);
   assert.ok(extensions.command('configured'));
 });
 
@@ -151,4 +154,32 @@ test('invalid configuration returns a failure without changing the registry', as
   assert.equal(results[0].status, 'failed');
   assert.equal(results[0].error, 'invalid plugin config');
   assert.deepEqual(extensions.commands(), []);
+});
+
+test('configured package declarations are checked before staged contributions take effect', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'svg-manifest-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const config = join(directory, 'plugins.json');
+  const modules = ['./wrong/index.mjs', './right/index.mjs'];
+  writeFileSync(config, JSON.stringify({ plugins: modules.map(module => ({ module })) }));
+  for (const [folder, declares] of [['wrong', 'declared'], ['right', 'actual']]) {
+    const packageDir = join(directory, folder);
+    mkdirSync(packageDir);
+    writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+      name: folder, contributes: { commands: [declares] },
+    }));
+    writeFileSync(join(packageDir, 'index.mjs'), `
+      export default {
+        manifest: { id: '${folder}', apiVersion: 1, contributes: { commands: ['actual'] } },
+        activate(registrar) {
+          registrar.registerCommand({ name: 'actual', usage: 'actual', help: 'actual', execute() {} });
+        },
+      };
+    `);
+  }
+  const extensions = createDefaultExtensions();
+  const results = await new PluginLoader(extensions).loadConfig(config);
+  assert.deepEqual(results.map(result => result.status), ['failed', 'loaded']);
+  assert.match(results[0].error ?? '', /^plugin manifest mismatch: wrong /);
+  assert.deepEqual(extensions.commands().map(entry => entry.name), ['actual']);
 });

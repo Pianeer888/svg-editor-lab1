@@ -1,11 +1,11 @@
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { Tokenizer } from './Tokenizer.js';
-import { SvgDocument } from '../model/SvgDocument.js';
+import type { SvgDocument } from '../model/SvgDocument.js';
 import { ShapeFactory } from '../model/ShapeFactory.js';
 import { Group } from '../model/Group.js';
 import type { Shape } from '../model/Shape.js';
-import { CommandHistory } from '../application/CommandHistory.js';
+import { EditorSession } from '../application/EditorSession.js';
 import { CreateCommand } from '../application/CreateCommand.js';
 import { DeleteCommand } from '../application/DeleteCommand.js';
 import { ShapeEditCommand } from '../application/ShapeEditCommand.js';
@@ -20,17 +20,16 @@ import { ExtensionRegistry } from '../extensions/ExtensionRegistry.js';
 import { createDefaultExtensions } from '../extensions/DefaultExtensions.js';
 
 export class Cli implements CommandContext {
-  private document: SvgDocument | null = null;
-  private filePath: string | null = null;
-  private readonly history = new CommandHistory();
+  private readonly session: EditorSession;
   private readonly shapes: ShapeFactory;
 
   constructor(
     private readonly input: Readable,
     private readonly output: Writable,
-    private readonly store: DocumentStore,
+    store: DocumentStore,
     private readonly extensions: ExtensionRegistry = createDefaultExtensions(),
   ) {
+    this.session = new EditorSession(store);
     this.shapes = new ShapeFactory(extensions);
     this.registerBuiltInCommands();
   }
@@ -84,10 +83,12 @@ export class Cli implements CommandContext {
     add('front', 'front <id>', args => this.reorder(args, 'front'), 'front <id> | back <id>');
     add('back', 'back <id>', args => this.reorder(args, 'back'), '');
     add('undo', 'undo', args => {
-      this.expectCount(args, 0, 0, 'undo'); this.requireDocument(); this.write(`undid: ${this.history.undo()}\n`);
+      this.expectCount(args, 0, 0, 'undo');
+      this.write(`undid: ${this.session.undo()}\n`);
     }, 'undo | redo');
     add('redo', 'redo', args => {
-      this.expectCount(args, 0, 0, 'redo'); this.requireDocument(); this.write(`redid: ${this.history.redo()}\n`);
+      this.expectCount(args, 0, 0, 'redo');
+      this.write(`redid: ${this.session.redo()}\n`);
     }, '');
     add('tree', 'tree [id]', args => this.tree(args));
     add('show', 'show <id>', args => this.show(args));
@@ -96,33 +97,23 @@ export class Cli implements CommandContext {
   private init(args: string[]): void {
     this.expectCount(args, 0, 2, 'init [w] [h]');
     if (args.length === 1) throw new Error('usage: init [w] [h]');
-    const width = args.length === 0 ? 800 : this.number(args[0]!);
-    const height = args.length === 0 ? 600 : this.number(args[1]!);
-    this.document = new SvgDocument(width, height);
-    this.filePath = null;
-    this.history.blockAfterIo();
+    const { width, height } = args.length === 0
+      ? this.session.initialize()
+      : this.session.initialize(this.number(args[0]!), this.number(args[1]!));
     this.output.write(`canvas ${width}x${height} created\n`);
   }
 
   private read(args: string[]): void {
     this.expectCount(args, 1, 1, 'read <file.svg>');
     const path = args[0]!;
-    const { document, warnings } = this.store.load(path);
-    this.document = document;
-    this.filePath = path;
-    this.history.blockAfterIo();
+    const { document, warnings } = this.session.read(path);
     for (const warning of warnings) this.output.write(`${warning}\n`);
     this.output.write(`read ${path} (${[...document.walk()].length} elements)\n`);
   }
 
   private save(args: string[]): void {
     this.expectCount(args, 0, 1, 'save [file.svg]');
-    const document = this.requireDocument();
-    const path = args[0] ?? this.filePath;
-    if (path === null) throw new Error("no file path. use 'save <file.svg>' first");
-    this.store.save(path, document);
-    this.filePath = path;
-    this.history.blockAfterIo();
+    const { path, document } = this.session.save(args[0]);
     this.output.write(`saved to ${path} (${[...document.walk()].length} elements)\n`);
   }
 
@@ -131,8 +122,7 @@ export class Cli implements CommandContext {
     if (args.length === 1) throw new Error('usage: canvas [w] [h]');
     const document = this.requireDocument();
     if (args.length === 2) {
-      document.resize(this.number(args[0]!), this.number(args[1]!));
-      this.history.blockAfterIo();
+      this.session.resize(this.number(args[0]!), this.number(args[1]!));
     }
     this.output.write(`canvas ${document.width}x${document.height}\n`);
   }
@@ -144,14 +134,14 @@ export class Cli implements CommandContext {
     let parentId: string | undefined;
     if (rest.length >= 2 && rest[rest.length - 2] === 'in') { parentId = rest.pop(); rest.pop(); }
     const shape = this.shapes.create(type!, id!, rest);
-    this.history.execute(new CreateCommand(doc, shape, parentId));
+    this.executeEdit(new CreateCommand(doc, shape, parentId));
     this.output.write(`${shape.type}#${shape.id} created${parentId === undefined ? '' : ` in g#${parentId}`}\n`);
   }
 
   private delete(args: string[]): void {
     this.expectCount(args, 1, 1, 'delete <id>');
     const command = new DeleteCommand(this.requireDocument(), args[0]!);
-    this.history.execute(command);
+    this.executeEdit(command);
     this.output.write(`${command.description}\n`);
   }
 
@@ -159,7 +149,7 @@ export class Cli implements CommandContext {
     this.expectCount(args, 3, 3, 'move <id> <dx> <dy>');
     const shape = this.requireShape(this.requireDocument(), args[0]!);
     const dx = this.number(args[1]!); const dy = this.number(args[2]!);
-    this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} moved by (${dx},${dy})`, shape, () => shape.move(dx, dy)));
+    this.executeEdit(new ShapeEditCommand(`${shape.type}#${shape.id} moved by (${dx},${dy})`, shape, () => shape.move(dx, dy)));
     this.output.write(`${shape.type}#${shape.id} moved by (${dx},${dy})\n`);
   }
 
@@ -167,7 +157,7 @@ export class Cli implements CommandContext {
     this.expectCount(args, 2, 2, 'scale <id> <factor>');
     const shape = this.requireShape(this.requireDocument(), args[0]!);
     const factor = this.number(args[1]!);
-    this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} scaled by ${factor}`, shape, () => shape.scale(factor)));
+    this.executeEdit(new ShapeEditCommand(`${shape.type}#${shape.id} scaled by ${factor}`, shape, () => shape.scale(factor)));
     this.output.write(`${shape.type}#${shape.id} scaled by ${factor}\n`);
   }
 
@@ -180,35 +170,35 @@ export class Cli implements CommandContext {
     const update = handlers[0] === undefined
       ? () => shape.set(attribute, value)
       : () => handlers[0]!.set(shape, attribute, value);
-    this.history.execute(new ShapeEditCommand(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}`, shape, update));
+    this.executeEdit(new ShapeEditCommand(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}`, shape, update));
     this.output.write(`${shape.type}#${shape.id} updated: ${attribute}=${JSON.stringify(value)}\n`);
   }
 
   private group(args: string[]): void {
     if (args.length < 3) throw new Error('usage: group <newGid> <id1> <id2>…');
     const command = new GroupCommand(this.requireDocument(), args[0]!, args.slice(1));
-    this.history.execute(command);
+    this.executeEdit(command);
     this.output.write(`${command.description}\n`);
   }
 
   private ungroup(args: string[]): void {
     this.expectCount(args, 1, 1, 'ungroup <gid>');
     const command = new UngroupCommand(this.requireDocument(), args[0]!);
-    this.history.execute(command);
+    this.executeEdit(command);
     this.output.write(`${command.description}\n`);
   }
 
   private addto(args: string[]): void {
     this.expectCount(args, 2, 2, 'addto <gid> <id>');
     const command = new AddToCommand(this.requireDocument(), args[0]!, args[1]!);
-    this.history.execute(command);
+    this.executeEdit(command);
     this.output.write(`${command.description}\n`);
   }
 
   private reorder(args: string[], direction: 'front' | 'back'): void {
     this.expectCount(args, 1, 1, `${direction} <id>`);
     const command = new ReorderCommand(this.requireDocument(), args[0]!, direction);
-    this.history.execute(command);
+    this.executeEdit(command);
     this.output.write(`${command.description}\n`);
   }
 
@@ -250,12 +240,9 @@ export class Cli implements CommandContext {
     const value = [shape.summary(), ...labels].filter(Boolean).join(' ');
     return value ? `  ${value}` : '';
   }
-  requireDocument(): SvgDocument {
-    if (this.document === null) throw new Error("no document. use 'init' or 'read' first");
-    return this.document;
-  }
+  requireDocument(): SvgDocument { return this.session.requireDocument(); }
   write(message: string): void { this.output.write(message); }
-  executeEdit(command: EditCommand): void { this.history.execute(command); }
+  executeEdit(command: EditCommand): void { this.session.execute(command); }
   private requireShape(doc: SvgDocument, id: string): Shape {
     const shape = doc.find(id);
     if (!shape) throw new Error(`no such shape: ${id}`);
