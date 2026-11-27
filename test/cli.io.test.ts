@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { Cli } from '../dist/cli/Cli.js';
 import { SvgFileStore } from '../dist/infrastructure/SvgFileStore.js';
 
-async function run(lines) {
+async function run(lines: string[]) {
   let output = '';
   const sink = new Writable({ write(chunk, _encoding, callback) { output += chunk.toString(); callback(); } });
   await new Cli(Readable.from([lines.join('\n') + '\n']), sink, new SvgFileStore()).run();

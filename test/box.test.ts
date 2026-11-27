@@ -7,22 +7,29 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Cli } from '../dist/cli/Cli.js';
+import type { DocumentStore } from '../dist/application/DocumentStore.js';
 import { PluginLoader } from '../dist/composition/PluginLoader.js';
 import { createDefaultExtensions } from '../dist/extensions/DefaultExtensions.js';
 import { SvgCodec } from '../dist/infrastructure/SvgCodec.js';
+import { Group } from '../dist/model/Group.js';
 import createBoxPlugin from '../dist/plugins/box/index.js';
 
 function registry() {
   const extensions = createDefaultExtensions();
   const [result] = new PluginLoader(extensions).loadCode([createBoxPlugin()]);
-  assert.equal(result.status, 'loaded', result.error);
+  assert.equal(result.status, 'loaded', result.error ?? '');
   return extensions;
 }
 
-async function run(input, store = {}) {
+async function run(input: string, store: Partial<DocumentStore> = {}) {
   let output = '';
   const sink = new Writable({ write(chunk, _encoding, done) { output += chunk; done(); } });
-  await new Cli(Readable.from([input]), sink, store, registry()).run();
+  const io: DocumentStore = {
+    load() { throw new Error('unexpected read'); },
+    save() { throw new Error('unexpected save'); },
+    ...store,
+  };
+  await new Cli(Readable.from([input]), sink, io, registry()).run();
   return output;
 }
 
@@ -78,7 +85,7 @@ test('marked boxes round trip or fall back to ordinary groups without the plugin
     '<text id="b-label" x="20" y="15">A &amp; B</text>' +
     '<rect id="b-rect" x="0" y="0" width="10" height="20"/></g></svg>';
   const document = SvgCodec.parse(svg, extensions).document;
-  assert.equal(document.find('b').type, 'box');
+  assert.equal(document.find('b')?.type, 'box');
   const encoded = SvgCodec.serialize(document, extensions);
   assert.match(encoded, /<g id="b" data-kind="box" stroke="red">/);
   assert.equal(SvgCodec.serialize(SvgCodec.parse(encoded, extensions).document, extensions), encoded);
@@ -109,7 +116,9 @@ test('the code entry point runs the Version B session and saves both boxes', t =
   assert.match(result.stdout, /saved to flowchart-box\.svg \(8 elements\)/);
   const saved = readFileSync(join(directory, 'flowchart-box.svg'), 'utf8');
   const { document } = SvgCodec.parse(saved, registry());
-  assert.deepEqual(document.find('flowchart').children.map(shape => shape.type), ['box', 'box', 'line']);
-  assert.equal(document.find('n2-rect').fill, '#f5a623');
-  assert.equal(document.find('n2-label').geometry().text, '处理数据');
+  const flowchart = document.find('flowchart');
+  assert.ok(flowchart instanceof Group);
+  assert.deepEqual(flowchart.children.map(shape => shape.type), ['box', 'box', 'line']);
+  assert.equal(document.find('n2-rect')?.fill, '#f5a623');
+  assert.equal(document.find('n2-label')?.geometry().text, '处理数据');
 });

@@ -57,5 +57,6 @@ test('both CLI compositions show ordered labels and undo restores the saved tree
   const boxes = results[0].stdout.match(/^└── box#b.*$/gm);
   assert.deepEqual(boxes, ['└── box#b  (box) *', ...Array(5).fill('└── box#b  (box)')]);
   const frames = results[0].stdout.match(/rect#b-rect  x=.*$/gm);
+  assert.ok(frames);
   assert.deepEqual(frames.map(line => line.endsWith(' *')), [true, false, true, false, true, false]);
 });

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": false,
+    "erasableSyntaxOnly": true
+  },
+  "include": ["test/**/*.ts", "scripts/**/*.ts"]
+}

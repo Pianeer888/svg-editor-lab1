@@ -86,8 +86,7 @@ export class PluginLoader {
       if (this.loadedIds.has(pluginId)) throw new Error(`duplicate registration: plugins/${pluginId}`);
 
       const staged = new StagedExtensions();
-      try { plugin.activate(staged); }
-      catch (error) { throw new Error(`plugin failed to activate: ${pluginId} (${this.message(error)})`); }
+      plugin.activate(staged);
       this.validateContributions(manifest, staged.names());
       this.extensions.commit(staged.contributions());
       this.loadedIds.add(pluginId);

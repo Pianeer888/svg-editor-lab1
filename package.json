@@ -8,8 +8,11 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "build:extension": "tsc -p vscode-extension/tsconfig.json",
     "check:extension": "tsc -p vscode-extension/tsconfig.json --noEmit",
-    "metrics": "node scripts/metrics.mjs",
-    "test": "npm run build --silent && npm run build:extension --silent && node --test test/*.test.mjs",
+    "metrics": "node scripts/metrics.ts",
+    "metrics:history": "node scripts/history-metrics.ts",
+    "verify:phase2": "npm run build --silent && node scripts/verify-phase2.ts",
+    "check:tools": "npm run build --silent && npm run build:extension --silent && tsc -p tsconfig.tools.json",
+    "test": "npm run check:tools --silent && node --test test/*.test.ts",
     "cli": "npm run build --silent && node dist/main.js"
   },
   "devDependencies": {

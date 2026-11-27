@@ -6,7 +6,7 @@
 
 `[]` 是 Explorer 的装饰标记，不写入 URI、文件名或 SVG 内容。非 `.svg` 文件、目录和读取状态失败的资源不显示标记。扩展只在本地文件的 `.svg` 文本上提供文档符号；SVG 预览窗口本身不是文本编辑器，不显示 Outline。
 
-可在仓库根目录运行 `npm test`，其中 `test/vscode-extension.test.mjs` 检查嵌套结构、无 id 节点、源码位置、编辑后的更新、不完整 XML，以及文件与目录的标记条件。`npm run check:extension` 单独检查扩展的 TypeScript 类型。
+可在仓库根目录运行 `npm test`，其中 `test/vscode-extension.test.ts` 检查嵌套结构、无 id 节点、源码位置、编辑后的更新、不完整 XML，以及文件与目录的标记条件。`npm run check:extension` 单独检查扩展的 TypeScript 类型。
 
 ## VS Code 与扩展的职责
 

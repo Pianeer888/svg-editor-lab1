@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
 
-function files(directory) {
+function files(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
     const path = join(directory, entry.name);
     return entry.isDirectory() ? files(path) : extname(entry.name) === '.ts' ? [path] : [];
@@ -20,7 +20,7 @@ const rows = files(sourceRoot).sort().map(path => {
 });
 
 const maximum = rows.reduce((current, row) => row.imports > current.imports ? row : current, rows[0]);
-const total = key => rows.reduce((sum, row) => sum + row[key], 0);
+const total = (key: 'sourceLines' | 'imports') => rows.reduce((sum, row) => sum + row[key], 0);
 
 console.log(`TypeScript files: ${rows.length}`);
 console.log(`Source lines: ${total('sourceLines')}`);

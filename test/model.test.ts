@@ -12,6 +12,13 @@ import { UngroupCommand } from '../dist/application/UngroupCommand.js';
 import { AddToCommand } from '../dist/application/AddToCommand.js';
 import { ReorderCommand } from '../dist/application/ReorderCommand.js';
 import { CommandHistory } from '../dist/application/CommandHistory.js';
+import type { Shape } from '../dist/model/Shape.js';
+
+function childIds(doc: SvgDocument, id: string): string[] {
+  const group = doc.find(id);
+  assert.ok(group instanceof Group);
+  return group.children.map(shape => shape.id);
+}
 
 test('the six built-in shapes share geometry operations', () => {
   const shapes = [
@@ -37,8 +44,10 @@ test('a group transforms descendants and the document can find nested ids', () =
   doc.add(new Rect('r', 1, 2, 3, 4), 'outer');
   group.move(2, 3);
   group.scale(2);
-  assert.deepEqual(doc.find('r').geometry(), { x: 6, y: 10, width: 6, height: 8 });
-  assert.equal(doc.find('r').parent, group);
+  const rect = doc.find('r');
+  assert.ok(rect);
+  assert.deepEqual(rect.geometry(), { x: 6, y: 10, width: 6, height: 8 });
+  assert.equal(rect.parent, group);
 });
 
 test('duplicate ids and invalid attachment leave the document unchanged', () => {
@@ -60,7 +69,7 @@ test('a group cannot contain itself or an ancestor', () => {
 
 test('a composite can protect required children without blocking structural rollback', () => {
   class ProtectedGroup extends Group {
-    assertChildRemovalAllowed(child) {
+    protected override assertChildRemovalAllowed(child: Shape) {
       if (child.id === 'required') throw new Error(`required child: ${child.id}`);
     }
   }
@@ -86,14 +95,14 @@ test('group preserves document order and undo restores original parents and posi
   doc.add(new Rect('c', 0, 0, 1, 1), 'right');
   const history = new CommandHistory();
   history.execute(new GroupCommand(doc, 'picked', ['c', 'a']));
-  assert.deepEqual(doc.find('picked').children.map(shape => shape.id), ['a', 'c']);
-  assert.deepEqual(doc.find('left').children.map(shape => shape.id), ['picked', 'b']);
+  assert.deepEqual(childIds(doc, 'picked'), ['a', 'c']);
+  assert.deepEqual(childIds(doc, 'left'), ['picked', 'b']);
   history.undo();
   assert.equal(doc.find('picked'), undefined);
-  assert.deepEqual(doc.find('left').children.map(shape => shape.id), ['a', 'b']);
-  assert.deepEqual(doc.find('right').children.map(shape => shape.id), ['c']);
+  assert.deepEqual(childIds(doc, 'left'), ['a', 'b']);
+  assert.deepEqual(childIds(doc, 'right'), ['c']);
   history.redo();
-  assert.deepEqual(doc.find('picked').children.map(shape => shape.id), ['a', 'c']);
+  assert.deepEqual(childIds(doc, 'picked'), ['a', 'c']);
 });
 
 test('ungroup promotes children in place, and undo restores the nested container', () => {
@@ -106,18 +115,18 @@ test('ungroup promotes children in place, and undo restores the nested container
   doc.add(new Rect('after', 0, 0, 1, 1), 'outer');
   const history = new CommandHistory();
   history.execute(new UngroupCommand(doc, 'inner'));
-  assert.deepEqual(doc.find('outer').children.map(shape => shape.id), ['before', 'c', 'r', 'after']);
+  assert.deepEqual(childIds(doc, 'outer'), ['before', 'c', 'r', 'after']);
   history.undo();
-  assert.deepEqual(doc.find('outer').children.map(shape => shape.id), ['before', 'inner', 'after']);
-  assert.deepEqual(doc.find('inner').children.map(shape => shape.id), ['c', 'r']);
+  assert.deepEqual(childIds(doc, 'outer'), ['before', 'inner', 'after']);
+  assert.deepEqual(childIds(doc, 'inner'), ['c', 'r']);
   history.redo();
-  assert.deepEqual(doc.find('outer').children.map(shape => shape.id), ['before', 'c', 'r', 'after']);
+  assert.deepEqual(childIds(doc, 'outer'), ['before', 'c', 'r', 'after']);
 });
 
 test('group restores the original tree when attaching a selected child fails midway', () => {
   class FailingDocument extends SvgDocument {
     failOnce = true;
-    add(shape, parentId) {
+    override add(shape: Shape, parentId?: string) {
       super.add(shape, parentId);
       if (this.failOnce && parentId === 'picked' && shape.id === 'b') {
         this.failOnce = false;
@@ -141,7 +150,7 @@ test('group restores the original tree when attaching a selected child fails mid
 test('ungroup restores the original tree when promoting a child fails midway', () => {
   class FailingDocument extends SvgDocument {
     failOnce = true;
-    insert(shape, parentId, index) {
+    override insert(shape: Shape, parentId?: string, index?: number) {
       super.insert(shape, parentId, index);
       if (this.failOnce && shape.id === 'a' && parentId === 'outer') {
         this.failOnce = false;
@@ -166,7 +175,7 @@ test('ungroup restores the original tree when promoting a child fails midway', (
 test('a failed group undo keeps both the tree and history available for retry', () => {
   class FailingDocument extends SvgDocument {
     failOnRestore = false;
-    insert(shape, parentId, index) {
+    override insert(shape: Shape, parentId?: string, index?: number) {
       super.insert(shape, parentId, index);
       if (this.failOnRestore && shape.id === 'a' && parentId === 'left') {
         this.failOnRestore = false;
@@ -212,8 +221,8 @@ test('addto and z-order undo exactly; invalid structure edits do not enter histo
   history.undo();
   assert.deepEqual(doc.children.map(shape => shape.id), ['outer', 'a', 'b', 'c']);
   history.execute(new AddToCommand(doc, 'inner', 'b'));
-  assert.deepEqual(doc.find('inner').children.map(shape => shape.id), ['b']);
+  assert.deepEqual(childIds(doc, 'inner'), ['b']);
   history.undo();
   assert.deepEqual(doc.children.map(shape => shape.id), ['outer', 'a', 'b', 'c']);
-  assert.deepEqual(doc.find('inner').children.map(shape => shape.id), []);
+  assert.deepEqual(childIds(doc, 'inner'), []);
 });

@@ -32,6 +32,7 @@ test('SVG round trip preserves canvas, tree order, all six shapes, styles, and e
   assert.deepEqual([...document.walk()].map(shape => shape.id), [...original.walk()].map(shape => shape.id));
   for (const before of original.walk()) {
     const after = document.find(before.id);
+    assert.ok(after);
     assert.deepEqual(after.geometry(), before.geometry());
     assert.equal(after.fill, before.fill);
     assert.equal(after.stroke, before.stroke);
@@ -51,11 +52,13 @@ test('missing ids are assigned without colliding with explicit ids later in the 
     'warning: assigned id g1 to unnamed <g>',
     'warning: assigned id text1 to unnamed <text>',
   ]);
-  assert.equal(document.find('text1').geometry().text, 'A & B');
+  const text = document.find('text1');
+  assert.ok(text);
+  assert.equal(text.geometry().text, 'A & B');
 });
 
 test('unsupported or malformed SVG is rejected instead of silently losing content', () => {
-  const svg = body => `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">${body}</svg>`;
+  const svg = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">${body}</svg>`;
   assert.throws(() => SvgCodec.parse(svg('<path id="p" d="M0 0"/>')), /unsupported SVG element/);
   assert.throws(() => SvgCodec.parse(svg('<rect id="r" x="0" y="0" width="1" height="1" transform="translate(1,1)"/>')), /unsupported SVG attribute/);
   assert.throws(() => SvgCodec.parse(svg('<rect id="r" x="0" y="0" width="1" height="1"/><circle id="r" cx="1" cy="1" r="1"/>')), /id already exists/);

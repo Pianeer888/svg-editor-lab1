@@ -3,13 +3,15 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { Readable, Writable } from 'node:stream';
 import { Cli } from '../dist/cli/Cli.js';
+import type { DocumentStore } from '../dist/application/DocumentStore.js';
+import type { ExtensionRegistry } from '../dist/extensions/ExtensionRegistry.js';
 import { createDefaultExtensions } from '../dist/extensions/DefaultExtensions.js';
 import { SvgCodec } from '../dist/infrastructure/SvgCodec.js';
 import { SvgFileStore } from '../dist/infrastructure/SvgFileStore.js';
 import { Shape } from '../dist/model/Shape.js';
 import { SvgDocument } from '../dist/model/SvgDocument.js';
 
-async function run(lines, configure = () => {}) {
+async function run(lines: string[], configure: (extensions: ExtensionRegistry) => void = () => {}) {
   const extensions = createDefaultExtensions();
   configure(extensions);
   let output = '';
@@ -77,11 +79,14 @@ test('a failing attribute handler restores state and does not enter history', as
 
 test('a registered shape provider owns creation and SVG conversion', () => {
   class Point extends Shape {
-    constructor(id, x, y) { super(id, 'point'); this.x = x; this.y = y; }
-    move(dx, dy) { this.x += dx; this.y += dy; }
-    scale(factor) { this.x *= factor; this.y *= factor; }
+    private x: number;
+    private y: number;
+
+    constructor(id: string, x: number, y: number) { super(id, 'point'); this.x = x; this.y = y; }
+    move(dx: number, dy: number) { this.x += dx; this.y += dy; }
+    scale(factor: number) { this.x *= factor; this.y *= factor; }
     geometry() { return { x: this.x, y: this.y }; }
-    setSpecific(attribute, value) {
+    protected setSpecific(attribute: string, value: string) {
       if (attribute === 'x') this.x = Number(value);
       else if (attribute === 'y') this.y = Number(value);
       else throw new Error(`unknown attribute: ${attribute}`);
@@ -103,6 +108,7 @@ test('a registered shape provider owns creation and SVG conversion', () => {
   const xml = SvgCodec.serialize(document, extensions);
   assert.match(xml, /<point id="p" x="3" y="4"\/>/);
   const parsed = SvgCodec.parse(xml, extensions).document.find('p');
+  assert.ok(parsed);
   assert.deepEqual(parsed.geometry(), { x: 3, y: 4 });
 });
 
@@ -117,7 +123,7 @@ test('default extensions preserve the Phase 1 transcript byte for byte', async (
   const input = readFileSync(new URL('../doc/transcript/cli-1.txt', import.meta.url), 'utf8');
   const expected = readFileSync(new URL('../doc/transcript/cli-1.final.out', import.meta.url), 'utf8');
   const imported = readFileSync(new URL('../doc/transcript/other.svg', import.meta.url), 'utf8');
-  const store = {
+  const store: DocumentStore = {
     load(path) { assert.equal(path, 'other.svg'); return SvgCodec.parse(imported); },
     save(path) { assert.equal(path, 'demo.svg'); },
   };

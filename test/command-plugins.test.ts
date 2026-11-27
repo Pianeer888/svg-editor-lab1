@@ -6,15 +6,18 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
 import { Cli } from '../dist/cli/Cli.js';
+import type { Command, CommandContext } from '../dist/extensions/Command.js';
+import type { Plugin } from '../dist/extensions/Plugin.js';
 import { PluginLoader } from '../dist/composition/PluginLoader.js';
 import { createDefaultExtensions } from '../dist/extensions/DefaultExtensions.js';
 import { SvgFileStore } from '../dist/infrastructure/SvgFileStore.js';
 import { StatsPlugin } from '../dist/plugins/stats/StatsPlugin.js';
 import { DirPlugin } from '../dist/plugins/dir/DirPlugin.js';
 import { DirCommand } from '../dist/plugins/dir/DirCommand.js';
+import type { DirectoryAccess } from '../dist/plugins/dir/DirectoryAccess.js';
 import { NodeDirectoryAdapter } from '../dist/plugins/dir/NodeDirectoryAdapter.js';
 
-async function run(lines, plugins) {
+async function run(lines: string[], plugins: readonly Plugin[]) {
   const extensions = createDefaultExtensions();
   let output = '';
   const sink = new Writable({ write(chunk, _encoding, callback) { output += chunk.toString(); callback(); } });
@@ -25,9 +28,17 @@ async function run(lines, plugins) {
   return output;
 }
 
-function commandOutput(command) {
+function directoryContext(write: CommandContext['write']): CommandContext {
+  return {
+    write,
+    requireDocument() { throw new Error('dir must not require a document'); },
+    executeEdit() { throw new Error('dir must not edit the document'); },
+  };
+}
+
+function commandOutput(command: Command) {
   let output = '';
-  const context = { write(value) { output += value; } };
+  const context = directoryContext(value => { output += value; });
   command.execute(context, []);
   return output;
 }
@@ -55,7 +66,7 @@ test('plugin package manifests match their runtime contribution manifests', () =
   const cases = [
     ['../src/plugins/stats/package.json', new StatsPlugin().manifest],
     ['../src/plugins/dir/package.json', new DirPlugin({ currentDirectory: () => '.', read: () => [] }).manifest],
-  ];
+  ] as const;
   for (const [path, manifest] of cases) {
     const metadata = JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
     assert.deepEqual(metadata.contributes, manifest.contributes);
@@ -63,7 +74,7 @@ test('plugin package manifests match their runtime contribution manifests', () =
 });
 
 test('dir command uses its directory port for stable mixed-entry output', () => {
-  const directories = {
+  const directories: DirectoryAccess = {
     currentDirectory: () => '/fixed',
     read: () => [
       { name: 'z-dir', kind: 'directory' }, { name: 'b.txt', kind: 'file' },
@@ -80,11 +91,11 @@ test('dir command handles an empty directory and normalizes read failures', () =
   assert.equal(commandOutput(new DirCommand(empty)), '(empty directory)\n');
   const failed = { currentDirectory: () => '/blocked', read: () => { throw new Error('denied'); } };
   assert.throws(() => commandOutput(new DirCommand(failed)), /cannot read directory: \/blocked/);
-  assert.throws(() => new DirCommand(empty).execute({ write() {} }, ['extra']), /usage: dir/);
+  assert.throws(() => new DirCommand(empty).execute(directoryContext(() => {}), ['extra']), /usage: dir/);
 });
 
 test('dir works before init and does not alter undo history after success or failure', async () => {
-  const available = { currentDirectory: () => '/fixed', read: () => [{ name: 'a.svg', kind: 'file' }] };
+  const available: DirectoryAccess = { currentDirectory: () => '/fixed', read: () => [{ name: 'a.svg', kind: 'file' }] };
   const success = await run(['dir', 'init', 'create rect r 0 0 1 1', 'dir', 'undo', 'tree'],
     [new DirPlugin(available)]);
   assert.equal((success.match(/\[FILE\]  a\.svg/g) ?? []).length, 2);
@@ -126,7 +137,7 @@ test('code and configuration composition produce byte-identical dir output', t =
     { module: resolve('dist/plugins/stats/index.js') },
     { module: resolve('dist/plugins/dir/index.js') },
   ] }));
-  const options = { cwd: working, input: 'init\nstats\ndir\n', encoding: 'utf8' };
+  const options = { cwd: working, input: 'init\nstats\ndir\n', encoding: 'utf8' } as const;
   const code = spawnSync(process.execPath, [main], options);
   const configured = spawnSync(process.execPath, [main, '--config', config], options);
   assert.equal(code.status, 0, code.stderr);

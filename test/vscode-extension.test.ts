@@ -1,23 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import type { TextDocument, Uri } from 'vscode';
 
 const require = createRequire(import.meta.url);
-const { SvgOutlineParser } = require('../vscode-extension/dist/SvgOutlineParser.js');
+const { SvgOutlineParser }: typeof import('../vscode-extension/dist/SvgOutlineParser.js') =
+  require('../vscode-extension/dist/SvgOutlineParser.js');
 
 class Position {
-  constructor(line, character) { this.line = line; this.character = character; }
+  readonly line: number;
+  readonly character: number;
+  constructor(line: number, character: number) { this.line = line; this.character = character; }
 }
 class Range {
-  constructor(start, end) { this.start = start; this.end = end; }
+  readonly start: Position;
+  readonly end: Position;
+  constructor(start: Position, end: Position) { this.start = start; this.end = end; }
 }
 class DocumentSymbol {
-  constructor(name, detail, kind, range, selectionRange) {
+  constructor(name: string, detail: string, kind: number, range: Range, selectionRange: Range) {
     Object.assign(this, { name, detail, kind, range, selectionRange, children: [] });
   }
 }
 class FileDecoration {
-  constructor(badge, tooltip) { Object.assign(this, { badge, tooltip }); }
+  constructor(badge: string, tooltip: string) { Object.assign(this, { badge, tooltip }); }
 }
 const vscode = {
   Range, DocumentSymbol, FileDecoration,
@@ -25,25 +31,34 @@ const vscode = {
   FileType: { File: 1, Directory: 2, SymbolicLink: 64 },
   workspace: { fs: { stat: async () => ({ type: 1 }) } },
 };
-const Module = require('node:module');
+const Module: { _load(name: string, parent: unknown, isMain: boolean): unknown } = require('node:module');
 const originalLoad = Module._load;
 Module._load = function (name, parent, isMain) {
   if (name === 'vscode') return vscode;
   return originalLoad.call(this, name, parent, isMain);
 };
-const { SvgDocumentSymbolProvider } = require('../vscode-extension/dist/SvgDocumentSymbolProvider.js');
-const { SvgFileDecorationProvider } = require('../vscode-extension/dist/SvgFileDecorationProvider.js');
+const { SvgDocumentSymbolProvider }: typeof import('../vscode-extension/dist/SvgDocumentSymbolProvider.js') =
+  require('../vscode-extension/dist/SvgDocumentSymbolProvider.js');
+const { SvgFileDecorationProvider }: typeof import('../vscode-extension/dist/SvgFileDecorationProvider.js') =
+  require('../vscode-extension/dist/SvgFileDecorationProvider.js');
 Module._load = originalLoad;
 
-function document(text) {
-  return {
+function document(text: string): TextDocument {
+  const stub = {
     getText: () => text,
-    positionAt(offset) {
+    positionAt(offset: number) {
       const before = text.slice(0, offset);
       const lines = before.split('\n');
-      return new Position(lines.length - 1, lines.at(-1).length);
+      return new Position(lines.length - 1, lines[lines.length - 1].length);
     },
   };
+  // The symbol provider only reads text and translates offsets.
+  return stub as Pick<TextDocument, 'getText'> as TextDocument;
+}
+
+function resource(scheme: string, path: string): Uri {
+  // The file decoration provider only reads these two fields.
+  return { scheme, path } as Uri;
 }
 
 test('native Outline symbols preserve SVG nesting, ids, and source positions', () => {
@@ -65,17 +80,17 @@ test('edited text produces updated symbols; incomplete XML clears them without t
 });
 
 test('file decoration marks SVG files only and leaves the resource untouched', async () => {
-  const visited = [];
+  const visited: string[] = [];
   const provider = new SvgFileDecorationProvider({ stat: async uri => {
     visited.push(uri.path);
-    return { type: uri.path.includes('directory') ? 2 : 1 };
+    return { type: uri.path.includes('directory') ? 2 : 1, ctime: 0, mtime: 0, size: 0 };
   } });
-  const svg = { scheme: 'file', path: '/work/example.svg' };
-  assert.equal((await provider.provideFileDecoration(svg)).badge, '[]');
+  const svg = resource('file', '/work/example.svg');
+  assert.equal((await provider.provideFileDecoration(svg))?.badge, '[]');
   assert.deepEqual(svg, { scheme: 'file', path: '/work/example.svg' });
-  assert.equal(await provider.provideFileDecoration({ scheme: 'file', path: '/work/readme.txt' }), undefined);
-  assert.equal(await provider.provideFileDecoration({ scheme: 'file', path: '/work/directory.svg' }), undefined);
-  assert.equal(await provider.provideFileDecoration({ scheme: 'untitled', path: '/work/example.svg' }), undefined);
+  assert.equal(await provider.provideFileDecoration(resource('file', '/work/readme.txt')), undefined);
+  assert.equal(await provider.provideFileDecoration(resource('file', '/work/directory.svg')), undefined);
+  assert.equal(await provider.provideFileDecoration(resource('untitled', '/work/example.svg')), undefined);
   assert.deepEqual(visited, ['/work/example.svg', '/work/directory.svg']);
   const failing = new SvgFileDecorationProvider({ stat: async () => { throw new Error('missing'); } });
   assert.equal(await failing.provideFileDecoration(svg), undefined);

@@ -1,0 +1,56 @@
+@startuml
+!pragma layout smetana
+title Phase 2 CLI 组件依赖
+left to right direction
+skinparam componentStyle rectangle
+
+package "装配层" {
+  component "main.ts" as Main
+  component "PluginLoader / StagedExtensions" as Loader
+  artifact "plugins.config.json" as Config
+}
+package "内核" {
+  component "Cli / Tokenizer" as Cli
+  component "编辑命令 / CommandHistory" as History
+  component "SvgDocument / Shape / Group" as Model
+  component "ExtensionRegistry / ShapeFactory" as Registry
+  component "内置图形提供者" as Builtin
+  component "Command / ShapeProvider /\nTreeDecorator / AttributeHandler" as Slots
+  interface "DocumentStore" as Port
+  component "SvgCodec / SvgFileStore" as Codec
+}
+package "可选插件" {
+  component "stats" as Stats
+  component "dir / DirectoryAccess / NodeDirectoryAdapter" as Dir
+  component "box" as Box
+  component "box-type-label" as Label
+  component "modified-star / SavePointStore" as Star
+}
+Main --> Cli : 建立会话
+Main --> Loader : 选择装配方式
+Main --> Codec : 装配文件存储
+Main --> Star : 绑定保存点
+Main --> Box : 代码装配
+Main --> Stats
+Main --> Dir
+Main --> Label
+Loader --> Config : 读取模块列表
+Loader --> Registry : 校验后提交
+Cli --> Registry : 分发命令和标签
+Cli --> Port : 读写
+Cli --> History : 执行、撤销与重做
+History --> Model
+Registry --> Slots
+Builtin ..> Slots : 实现图形提供者
+Builtin --> Model
+Codec ..> Port : 实现
+Codec --> Registry : 选择图形提供者
+Codec --> Model
+Box ..> Slots
+Box --> Model
+Stats ..> Slots
+Dir ..> Slots
+Label ..> Slots
+Star ..> Slots
+Star ..> Port : 包装存储
+@enduml

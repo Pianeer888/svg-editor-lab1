@@ -1,4 +1,4 @@
-# SVG 编辑器 Phase 1：设计与过程记录
+# SVG 编辑器：设计与过程记录
 
 Phase 2 的实施计划见 [phase2-plan.md](./phase2-plan.md)；VS Code 扩展的启动与设计分析见 [vscode-extension/README.md](../vscode-extension/README.md)。
 
@@ -17,7 +17,7 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 
 `src/extensions/DefaultExtensions.ts` 是当前组合入口，`main.ts` 把同一个注册表实例交给 CLI 与文件存储。内置图形由 `BuiltInShapeProvider` 注册；SVG 编解码不再包含图形类型分支。读回时先为 XML 子树分配 id，再由提供者构造完整图形子树，最后交给文档一次检查全部 id。属性处理器失败时由 `ShapeEditCommand` 恢复修改前状态，失败操作不进入历史。带 `data-kind` 的 `<g>` 在没有专用提供者时按普通组读入，保留可表达的子图形。
 
-`test/extensions.test.mjs` 覆盖四个扩展点、属性冲突与失败回滚、标记组的缺省读回，以及 Phase 1 会话逐字节回归。首次脚本化度量保存在 [metrics/commit-3.txt](./metrics/commit-3.txt)，可通过 `npm run metrics` 重现。
+`test/extensions.test.ts` 覆盖四个扩展点、属性冲突与失败回滚、标记组的缺省读回，以及 Phase 1 会话逐字节回归。首次脚本化度量保存在 [metrics/commit-3.txt](./metrics/commit-3.txt)，可通过 `npm run metrics` 重现。
 
 ### Commit 4：事务式插件装载
 
@@ -31,7 +31,7 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 }
 ```
 
-每个插件通过内核侧的 `PluginManifest` 声明 id、API 版本及 `shapes`、`commands`、`decorators`、`attributes` 四类贡献名称，并在 `activate` 中只访问临时 `ExtensionRegistrar`。组合层的 `StagedExtensions` 暂存实际贡献；加载器核对 manifest 后，`ExtensionRegistry.commit` 先检查全部名称，再一次提交。`enabled: false` 的条目直接跳过；若模块默认导出工厂函数，`options` 原样传给该工厂。激活异常、manifest 不一致、重复名称、配置或模块读取失败都会产生失败结果，不会留下部分注册；加载列表中的后续插件仍继续处理。`test/plugin-loader.test.mjs` 覆盖代码装配、配置装配和上述失败回滚路径。
+每个插件通过内核侧的 `PluginManifest` 声明 id、API 版本及 `shapes`、`commands`、`decorators`、`attributes` 四类贡献名称，并在 `activate` 中只访问临时 `ExtensionRegistrar`。组合层的 `StagedExtensions` 暂存实际贡献；加载器核对 manifest 后，`ExtensionRegistry.commit` 先检查全部名称，再一次提交。`enabled: false` 的条目直接跳过；若模块默认导出工厂函数，`options` 原样传给该工厂。激活异常、manifest 不一致、重复名称、配置或模块读取失败都会产生失败结果，不会留下部分注册；加载列表中的后续插件仍继续处理。`test/plugin-loader.test.ts` 覆盖代码装配、配置装配和上述失败回滚路径。
 
 ### Commit 5：`stats` 与 `dir` 命令插件
 
@@ -48,7 +48,7 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 | Adaptee | Node `fs` 与进程工作目录 | 提供真实目录信息。 |
 | Client | `DirCommand` | 只依赖 Target，负责分组、排序和输出。 |
 
-目录、普通文件和其他类型分别显示为 `[DIR]`、`[FILE]`、`[OTHER]`；符号链接不遍历目标，归入 `[OTHER]` 并排在普通文件之后。隐藏项照常显示。`test/command-plugins.test.mjs` 使用测试替身覆盖混合目录、空目录、读取失败和历史不变，并用临时目录验证真实 Adapter；同一固定目录下的代码装配与配置装配输出逐字节一致。会话输入保存在 [transcript/cli-plugins.txt](./transcript/cli-plugins.txt)。
+目录、普通文件和其他类型分别显示为 `[DIR]`、`[FILE]`、`[OTHER]`；符号链接不遍历目标，归入 `[OTHER]` 并排在普通文件之后。隐藏项照常显示。`test/command-plugins.test.ts` 使用测试替身覆盖混合目录、空目录、读取失败和历史不变，并用临时目录验证真实 Adapter；同一固定目录下的代码装配与配置装配输出逐字节一致。会话输入保存在 [transcript/cli-plugins.txt](./transcript/cli-plugins.txt)。
 
 ### Commit 6：代码装配接入 box
 
@@ -62,7 +62,35 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 
 `BoxTypeLabel` 和 `ModifiedStar` 分别注册到 `TreeDecorator`。组合根通过 `SavePointStore` 将成功读写通知交给启用的星号标签。相同的配置项可在 `plugins.config.json` 中独立启用，标签按注册顺序追加。保存点语义及传播规则见 [ADR](./adr/dirty-tree-label.md)。
 
-## 架构方案
+### Commit 9：架构对比与验收
+
+Phase 1 在 `Cli.execute` 和图形工厂集中选择内置行为。Phase 2 将命令、图形、树标签及属性行为交给注册表，组合根选择插件，SVG 读写通过提供者完成。编辑命令和 Composite 图形树仍负责原有的撤销与结构约束。
+
+| 架构阶段 | PlantUML 成品 |
+| --- | --- |
+| Phase 1 交付时的实际依赖 | [Phase 1 依赖图](./最终代码的实际依赖.svg)，源代码见本文“一致性自查” |
+| Phase 2 的装配、内核与扩展关系 | [Phase 2 依赖图](./architecture-phase2.svg) · [PlantUML 源码](./architecture-phase2.puml) |
+
+ADR 记录了 [属性处理](./adr/attribute-handlers.md)、[box 读回](./adr/box-readback.md)、[树标签的保存点语义](./adr/dirty-tree-label.md) 和 [事务注册](./adr/plugin-loading.md)。[度量报告](../docs/metrics/phase2.md) 包含分层文件清单、行数和圈复杂度增量。打完标签后执行 `npm run metrics:history -- final p2` 可从两个 Git 快照重新生成。
+
+#### 装配差异
+
+- `68b3ca0` 在 `main.ts` 选择 box。差异由新增插件、组合根、测试、命令会话和设计说明组成。
+- `ce12e07` 在 `demo/box-config` 通过配置选择同一个插件。差异由新增插件、配置、测试、命令会话和说明组成。两次接入共用 `8e3646c`，box 源码相同。
+
+```bash
+git diff --name-status 8e3646c 68b3ca0
+git diff --name-status 8e3646c ce12e07
+git diff --exit-code 8e3646c 68b3ca0 -- src ':(exclude)src/main.ts' ':(exclude)src/plugins/box'
+git diff --exit-code 8e3646c ce12e07 -- src ':(exclude)src/plugins/box'
+git diff --exit-code 68b3ca0 ce12e07 -- src/plugins/box
+```
+
+#### 自动验收
+
+`npm test` 覆盖图形、文件 IO、属性冲突和回滚、插件装载失败与重复注册、真实目录和目录替身、标签状态、VS Code 大纲和文件装饰。`npm run verify:phase2` 回放基础、box、stats/dir 三个命令会话，比较代码和配置装配的标准输出及生成的 SVG。每组使用相同的运行目录和初始文件，目录输出不会包含验收日志。脚本还从 Git 的 `final` 构建旧版，逐字节比较禁用可选插件时的基础会话。输入位于 `doc/transcript/`，输出及 SVG 预期值独立保存在 [验收快照](./transcript/phase2.expected.json)。
+
+## Phase 1 架构方案
 
 ### 模块划分
 
@@ -280,10 +308,10 @@ CODEC --> FACTORY : 构造图形
 
 | 范围 | 证据 | 结论 |
 | --- | --- | --- |
-| 六种图形与嵌套容器 | `test/model.test.mjs` | 创建、统一几何操作、父子关系、唯一 id 与循环拒绝均有测试。 |
-| Command 与 undo/redo | `test/model.test.mjs`、`test/cli.test.mjs` | 删除位置、组的跨容器收编、解组、移入容器、前后顺序、失败命令不入历史及 redo 清空均有测试；结构编辑与撤销中途抛错后恢复原树的故障注入测试通过。 |
-| SVG 格式 | `test/codec.test.mjs` | 六种图形、画布、样式、顺序及转义文本写出后读回；缺 id 补全且避开已有 id；非法或不支持的输入报错。 |
-| 文件与 CLI | `test/cli.io.test.mjs` | 实际临时文件的 `read/save`、路径复用、失败不改文档和历史、画布查询及修改后的历史阻断均有测试。 |
+| 六种图形与嵌套容器 | `test/model.test.ts` | 创建、统一几何操作、父子关系、唯一 id 与循环拒绝均有测试。 |
+| Command 与 undo/redo | `test/model.test.ts`、`test/cli.test.ts` | 删除位置、组的跨容器收编、解组、移入容器、前后顺序、失败命令不入历史及 redo 清空均有测试；结构编辑与撤销中途抛错后恢复原树的故障注入测试通过。 |
+| SVG 格式 | `test/codec.test.ts` | 六种图形、画布、样式、顺序及转义文本写出后读回；缺 id 补全且避开已有 id；非法或不支持的输入报错。 |
+| 文件与 CLI | `test/cli.io.test.ts` | 实际临时文件的 `read/save`、路径复用、失败不改文档和历史、画布查询及修改后的历史阻断均有测试。 |
 | 完整入口 | `npm run cli` 输入一段真实命令序列 | 9 个元素保存后读回，`tree/show` 的层级、尺寸和属性符合预期；`xmllint --noout` 验证生成文件是合法 XML。 |
 | 构建与检查 | `npm run check`、`npm test`、`git diff --check` | TypeScript 检查通过；自动化测试 27 项通过；改动无空白错误。 |
 
