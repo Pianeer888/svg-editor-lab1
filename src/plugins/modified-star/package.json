@@ -1,0 +1,6 @@
+{
+  "name": "@svgframe/plugin-modified-star",
+  "private": true,
+  "type": "module",
+  "contributes": { "decorators": ["modified-star"] }
+}

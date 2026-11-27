@@ -58,6 +58,10 @@ Commit 3 将变化点从条件分派改为显式注册，四个契约及调用�
 
 代码装配在 `main.ts` 选择插件。版本 B 的命令输入保存在 [cli-box.txt](./transcript/cli-box.txt)。
 
+### Commit 8：组合树标签
+
+`BoxTypeLabel` 和 `ModifiedStar` 分别注册到 `TreeDecorator`。组合根通过 `SavePointStore` 将成功读写通知交给启用的星号标签。相同的配置项可在 `plugins.config.json` 中独立启用，标签按注册顺序追加。保存点语义及传播规则见 [ADR](./adr/dirty-tree-label.md)。
+
 ## 架构方案
 
 ### 模块划分

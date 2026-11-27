@@ -1,6 +1,9 @@
 {
   "plugins": [
     { "module": "./dist/plugins/stats/index.js" },
-    { "module": "./dist/plugins/dir/index.js" }
+    { "module": "./dist/plugins/dir/index.js" },
+    { "module": "./dist/plugins/box/index.js" },
+    { "module": "./dist/plugins/box-type-label/index.js" },
+    { "module": "./dist/plugins/modified-star/index.js" }
   ]
 }

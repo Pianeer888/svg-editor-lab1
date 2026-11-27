@@ -48,7 +48,7 @@
 4. `feat: add transactional plugin loading`：两种装配共用注册路径；四类加载失败、重复注册和回滚测试。
 5. `feat: add stats and dir plugins`：独立插件包；dir 的目录接口、测试替身、真实文件系统测试。
 6. `feat: add box plugin through code composition`：只新增插件并修改顶层装配文件；验证内核及既有插件差异为空。
-7. `feat: demonstrate box config composition`：从第 5 步的框架基线另开演示分支，加入同一 box 插件并只修改配置；已有运行代码无差异。与第 6 步的代码装配提交分别核对差异，避免在一个提交中切换装配方式。
+7. `feat: demonstrate box config composition`：从子节点保护修正 `8e3646c` 建立 `demo/box-config`，加入与 Commit 6 相同的 box 插件，并通过 `plugins.config.json` 装配。演示提交为 `ce12e07`。
 8. `feat: add composable tree labels`：两个标签并存；无标签的树基线不变，保存点状态机通过测试。
 9. `docs: complete phase 2 verification`：PlantUML 前后依赖图、至少三条 ADR、脚本生成的 metrics、完整会话与双装配字节比较，最后打 `p2`。
 

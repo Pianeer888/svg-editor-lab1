@@ -138,11 +138,18 @@ test('code and configuration composition produce byte-identical dir output', t =
   assert.match(code.stdout, /\[DIR\]  docs[\s\S]*\[DIR\]  plugins[\s\S]*\[FILE\]  demo\.svg[\s\S]*\[FILE\]  package\.json/);
 });
 
-test('stats and dir transcript matches the recorded output byte for byte', () => {
+test('stats and dir transcript matches the recorded output byte for byte with labels disabled', t => {
   const main = resolve('dist/main.js');
   const input = readFileSync(resolve('doc/transcript/cli-plugins.txt'), 'utf8');
   const expected = readFileSync(resolve('doc/transcript/cli-plugins.expected.out'), 'utf8');
-  const result = spawnSync(process.execPath, [main], {
+  const directory = mkdtempSync(join(tmpdir(), 'svg-command-transcript-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const config = join(directory, 'plugins.json');
+  writeFileSync(config, JSON.stringify({ plugins: [
+    { module: resolve('dist/plugins/stats/index.js') },
+    { module: resolve('dist/plugins/dir/index.js') },
+  ] }));
+  const result = spawnSync(process.execPath, [main, '--config', config], {
     cwd: resolve('test/fixtures/dir'), input, encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr);
